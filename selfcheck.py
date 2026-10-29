@@ -16,6 +16,17 @@ from core.system_stats import collect_system_stats, system_info
 FAILURES: list[str] = []
 
 
+def _configure_console_output() -> None:
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None or not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            continue
+
+
 def check(label: str, condition: bool, detail: str = "") -> None:
     status = "OK " if condition else "FAIL"
     print(f"[{status}] {label}" + (f" — {detail}" if detail else ""))
@@ -24,6 +35,7 @@ def check(label: str, condition: bool, detail: str = "") -> None:
 
 
 def main() -> int:
+    _configure_console_output()
     apply_config_language()
     print("Pulse Monitor self-check")
     print("-" * 60)
