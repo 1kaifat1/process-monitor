@@ -63,7 +63,10 @@ def main() -> int:
         return 0
 
     window = MainWindow()
-    single.show_requested.connect(window.present)
+    app._pulse_window = window  # type: ignore[attr-defined]
+    single.show_requested.connect(
+        lambda: getattr(app, "_pulse_window", window).present()
+    )
     single.listen(takeover=replace_instance)
 
     start_minimized = bool(config.get("behavior.start_minimized", False))

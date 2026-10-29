@@ -65,7 +65,8 @@ class AutorunManager:
         entries.extend(self._registry_entries())
         entries.extend(self._startup_folder_entries())
         entries.extend(self._service_entries())
-        entries.extend(self._disabled_registry_entries())
+        existing_ids = {item["id"] for item in entries}
+        entries.extend(self._disabled_saved_entries(existing_ids))
         entries.sort(key=lambda item: (not item["enabled"], item["type"], item["name"].lower()))
         return entries
 
@@ -112,27 +113,54 @@ class AutorunManager:
                 continue
         return entries
 
-    def _disabled_registry_entries(self) -> list[dict[str, Any]]:
+    def _disabled_saved_entries(
+        self, existing_ids: set[str] | None = None
+    ) -> list[dict[str, Any]]:
         entries: list[dict[str, Any]] = []
+        seen = existing_ids or set()
         for record in config.disabled_autoruns():
-            if record.get("type") != "Реестр":
+            record_id = record.get("id", "")
+            if record_id and record_id in seen:
                 continue
+            record_type = record.get("type")
             extra = record.get("extra", {})
-            entries.append(
-                {
-                    "id": record.get("id", ""),
-                    "type": "Реестр",
-                    "name": record.get("name", "—"),
-                    "command": extra.get("command", record.get("command", "")),
-                    "location": f"{extra.get('hive', '')}\\{extra.get('key', '')}",
-                    "location_label": record.get("location_label", "Отключено"),
-                    "enabled": False,
-                    "can_toggle": True,
-                    "target": extract_target(extra.get("command", "")),
-                    "note": "отключено монитором",
-                    "extra": extra,
-                }
-            )
+            if record_type == "Реестр":
+                command = extra.get("command", record.get("command", ""))
+                entries.append(
+                    {
+                        "id": record_id,
+                        "type": "Реестр",
+                        "name": record.get("name", "—"),
+                        "command": command,
+                        "location": f"{extra.get('hive', '')}\\{extra.get('key', '')}",
+                        "location_label": record.get("location_label", "Отключено"),
+                        "enabled": False,
+                        "can_toggle": True,
+                        "target": extract_target(command),
+                        "note": "отключено монитором",
+                        "extra": extra,
+                    }
+                )
+            elif record_type == "Служба":
+                service_name = extra.get("service", "")
+                command = extra.get("command", record.get("command", ""))
+                entries.append(
+                    {
+                        "id": record_id or f"service:{service_name}",
+                        "type": "Служба",
+                        "name": record.get("name", service_name or "—"),
+                        "command": command,
+                        "location": "Службы Windows · автозапуск",
+                        "location_label": record.get(
+                            "location_label", f"sc: {service_name}"
+                        ),
+                        "enabled": False,
+                        "can_toggle": True,
+                        "target": extract_target(command),
+                        "note": "отключено монитором",
+                        "extra": {"service": service_name, "command": command},
+                    }
+                )
         return entries
 
     # ------------------------------------------------------------------
@@ -175,32 +203,32 @@ class AutorunManager:
     def _service_entries(self) -> list[dict[str, Any]]:
         entries: list[dict[str, Any]] = []
         try:
-            services = psutil.win_service_iter()
+            for service in psutil.win_service_iter():
+                try:
+                    info = service.as_dict()
+                except Exception:
+                    continue
+                if info.get("start_type") != "automatic":
+                    continue
+                name = info.get("name") or "—"
+                binpath = info.get("binpath") or ""
+                entries.append(
+                    {
+                        "id": f"service:{name}",
+                        "type": "Служба",
+                        "name": info.get("display_name") or name,
+                        "command": binpath,
+                        "location": "Службы Windows · автозапуск",
+                        "location_label": f"sc: {name}",
+                        "enabled": True,
+                        "can_toggle": True,
+                        "target": extract_target(binpath),
+                        "note": info.get("status") or "",
+                        "extra": {"service": name, "command": binpath},
+                    }
+                )
         except Exception:
             return entries
-        for service in services:
-            try:
-                info = service.as_dict()
-            except Exception:
-                continue
-            if info.get("start_type") != "automatic":
-                continue
-            name = info.get("name") or "—"
-            entries.append(
-                {
-                    "id": f"service:{name}",
-                    "type": "Служба",
-                    "name": info.get("display_name") or name,
-                    "command": info.get("binpath") or "",
-                    "location": "Службы Windows · автозапуск",
-                    "location_label": f"sc: {name}",
-                    "enabled": True,
-                    "can_toggle": True,
-                    "target": extract_target(info.get("binpath") or ""),
-                    "note": info.get("status") or "",
-                    "extra": {"service": name},
-                }
-            )
         return entries
 
     # ------------------------------------------------------------------
@@ -298,23 +326,40 @@ class AutorunManager:
             return False, tr("Не удалось изменить файл: {error}", error=exc)
 
     def _toggle_service(self, entry: dict[str, Any]) -> tuple[bool, str]:
-        service_name = entry.get("extra", {}).get("service", "")
+        extra = entry.get("extra", {})
+        service_name = extra.get("service", "")
         if not service_name:
             return False, tr("Не найдено имя службы")
-        action = "disabled" if entry.get("enabled", True) else "auto"
+        disabling = bool(entry.get("enabled", True))
+        action = "disabled" if disabling else "auto"
         code, out, err = run_hidden(["sc", "config", service_name, "start=", action])
         if code == 0:
-            state = tr("отключена") if action == "disabled" else tr("включена")
+            entry_id = entry.get("id") or f"service:{service_name}"
+            if disabling:
+                command = extra.get("command") or entry.get("command", "")
+                config.add_disabled_autorun(
+                    {
+                        "id": entry_id,
+                        "type": "Служба",
+                        "name": entry.get("name", service_name),
+                        "location_label": entry.get(
+                            "location_label", f"sc: {service_name}"
+                        ),
+                        "command": command,
+                        "extra": {"service": service_name, "command": command},
+                    }
+                )
+            else:
+                config.remove_disabled_autorun(entry_id)
+            state = tr("отключена") if disabling else tr("включена")
             return True, tr(
                 "Служба {state}. Изменения вступят в силу после перезагрузки.",
                 state=state,
             )
         message = (err or out).strip()
         lowered = message.lower()
-        if "отказано" in lowered or "access is denied" in lowered:
+        if "отказано" in lowered or "access is denied" in lowered or "5" in lowered:
             return False, tr(
                 "Нужны права администратора для изменения службы"
             )
         return False, message or tr("Не удалось изменить службу")
-
-

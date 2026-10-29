@@ -156,7 +156,7 @@ def run_hidden(args: list[str], timeout: float = 10.0) -> tuple[int, str, str]:
             creationflags=creation_flags,
             check=False,
         )
-        encoding = "cp866" if os.name == "nt" else "utf-8"
+        encoding = "oem" if os.name == "nt" else "utf-8"
         out = completed.stdout.decode(encoding, errors="replace")
         err = completed.stderr.decode(encoding, errors="replace")
         return completed.returncode, out, err
