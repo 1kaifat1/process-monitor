@@ -118,6 +118,35 @@ def relaunch_as_admin() -> bool:
         return False
 
 
+def relaunch_elevated(arguments: list[str], working_dir: str | None = None) -> bool:
+    """Перезапуск с UAC-повышением и произвольными аргументами.
+
+    В отличие от :func:`relaunch_as_admin` не добавляет ``--replace-instance``
+    и не копирует ``sys.argv``: используется для точечного запуска, например
+    ``--unlock <путь>`` из диалога разблокировки.
+    """
+    if os.name != "nt":
+        return False
+    try:
+        executable = sys.executable
+        if getattr(sys, "frozen", False):
+            params = subprocess.list2cmdline(arguments)
+        else:
+            script = str(Path(sys.argv[0]).resolve()) if sys.argv else ""
+            params = subprocess.list2cmdline([script, *arguments] if script else arguments)
+        result = ctypes.windll.shell32.ShellExecuteW(
+            None,
+            "runas",
+            executable,
+            params,
+            working_dir or str(Path.cwd()),
+            1,
+        )
+        return int(result) > 32
+    except Exception:
+        return False
+
+
 def open_in_explorer(path: str) -> bool:
     """Открыть проводник с выделением файла."""
     if not path:
@@ -156,7 +185,7 @@ def run_hidden(args: list[str], timeout: float = 10.0) -> tuple[int, str, str]:
             creationflags=creation_flags,
             check=False,
         )
-        encoding = "cp866" if os.name == "nt" else "utf-8"
+        encoding = "oem" if os.name == "nt" else "utf-8"
         out = completed.stdout.decode(encoding, errors="replace")
         err = completed.stderr.decode(encoding, errors="replace")
         return completed.returncode, out, err

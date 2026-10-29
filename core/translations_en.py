@@ -574,3 +574,72 @@ EN.update(
         "Превышено время ожидания": "Timed out",
     }
 )
+
+EN.update(
+    {
+        # Интеграция с Проводником и разблокировка файлов
+        "Разблокировать / Завершить процесс (Pulse Monitor)": (
+            "Unlock / End process (Pulse Monitor)"
+        ),
+        "Интегрировать в контекстное меню Проводника (ПКМ)": (
+            "Integrate into the Explorer context menu (right-click)"
+        ),
+        "Пункт «Разблокировать / Завершить процесс» появится в контекстном меню файлов и папок. Запись выполняется в HKEY_CURRENT_USER и не требует прав администратора.": (
+            "The “Unlock / End process” item will appear in the context menu of "
+            "files and folders. It is written to HKEY_CURRENT_USER and does not "
+            "require administrator rights."
+        ),
+        "Контекстное меню": "Context menu",
+        "Не удалось изменить пункт контекстного меню Проводника. Проверьте права доступа к реестру.": (
+            "Could not update the Explorer context menu item. Check registry "
+            "permissions."
+        ),
+        "Разблокировка файла": "Unlock file",
+        "Разблокировка файла или папки": "Unlock file or folder",
+        "Файл или папка: {path}": "File or folder: {path}",
+        "Ищу процессы, удерживающие файл…": "Looking for processes locking the file…",
+        "Не удалось опросить Restart Manager: {error}": (
+            "Could not query Restart Manager: {error}"
+        ),
+        "Файл не заблокирован — удерживающих процессов не найдено.": (
+            "The file is not locked — no holding processes found."
+        ),
+        "Найдено процессов: {count}": "Processes found: {count}",
+        "Перезапустить от имени Администратора": "Restart as Administrator",
+        "Завершить принудительно и удалить блокировку": (
+            "Force terminate and release the lock"
+        ),
+        "Завершить принудительно {count} процесс(ов)? Несохранённые данные этих приложений могут быть потеряны.": (
+            "Force terminate {count} process(es)? Unsaved data in these "
+            "applications may be lost."
+        ),
+        "Файл или папка не найдены.": "File or folder not found.",
+        "Не указан путь к файлу или папке.": "No file or folder path specified.",
+        "Блокировка снята: завершено процессов — {count}, дескрипторы освобождены.": (
+            "Lock released: {count} process(es) terminated, handles released."
+        ),
+        "Файл не был заблокирован.": "The file was not locked.",
+        "Не удалось снять блокировку. Остались процессы: {details}": (
+            "Could not release the lock. Remaining processes: {details}"
+        ),
+        "неизвестно": "unknown",
+        "Недостаточно прав: часть процессов запущена от имени администратора или системы. Перезапустите Pulse Monitor с повышенными правами, чтобы завершить их.": (
+            "Not enough permissions: some processes run as administrator or "
+            "SYSTEM. Restart Pulse Monitor elevated to terminate them."
+        ),
+        "доступ запрещён (нужны права администратора)": (
+            "access denied (administrator rights required)"
+        ),
+        "процесс уже завершён": "process has already exited",
+        "Повышение прав": "Elevation",
+        "Не удалось запустить приложение от имени администратора.": (
+            "Could not start the application as administrator."
+        ),
+        # Типы приложений Restart Manager
+        "приложение": "application",
+        "служба": "service",
+        "проводник": "explorer",
+        "консоль": "console",
+        "критический": "critical",
+    }
+)

@@ -59,18 +59,19 @@ class MainWindow(QMainWindow):
         self.network_collector = NetworkCollector()
         self.autorun_manager = AutorunManager()
         self._threads: list[CollectorThread] = []
+        self._process_thread: CollectorThread | None = None
+        self._network_thread: CollectorThread | None = None
+        self._system_thread: CollectorThread | None = None
         self._tray_message_shown = False
         self._current_page = 0
 
         self._build_ui()
         self._build_tray()
-        self._restore_geometry()
         self._start_workers()
+        self._restore_geometry()
         self._setup_shortcuts()
 
         QTimer.singleShot(250, self.autorun_view.refresh_now)
-        QTimer.singleShot(250, self.process_view.refresh_now)
-        QTimer.singleShot(450, self.network_view.refresh_now)
         QTimer.singleShot(0, self._on_page_changed)
 
         if honor_start_minimized and config.get("behavior.start_minimized", False):
@@ -364,14 +365,19 @@ class MainWindow(QMainWindow):
             if hasattr(view, "set_active"):
                 view.set_active(index == self._current_page)
         if self._current_page == 0:
-            self.dashboard_view.set_active(True)
-            self.process_view.set_active(False)
-        view = self.views[self._current_page]
-        if self._current_page == 3:
+            if self._system_thread is not None:
+                self._system_thread.force_cycle()
+            if self._process_thread is not None:
+                self._process_thread.force_cycle()
+        elif self._current_page == 1:
+            if self._process_thread is not None:
+                self._process_thread.force_cycle()
+        elif self._current_page == 2:
+            if self._network_thread is not None:
+                self._network_thread.force_cycle()
+        elif self._current_page == 3:
             if not self.autorun_view._entries:
                 self.autorun_view.refresh_now()
-        elif hasattr(view, "refresh_now"):
-            view.refresh_now()
 
     def refresh_current(self) -> None:
         if self._current_page == 0:
@@ -545,7 +551,3 @@ class MainWindow(QMainWindow):
         self._shutdown()
         event.accept()
         QApplication.quit()
-
-
-
-

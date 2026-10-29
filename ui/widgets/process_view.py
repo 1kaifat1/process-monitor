@@ -170,6 +170,7 @@ class ProcessTableModel(QAbstractTableModel):
             return self._widths[column]
         return 120
 
+
 class ProcessFilterProxy(QSortFilterProxyModel):
     """Поиск + режимы «все / скрытые / подозрительные»."""
 
@@ -213,6 +214,7 @@ class ProcessFilterProxy(QSortFilterProxyModel):
             if self._search not in haystack.lower():
                 return False
         return True
+
 
 class ProcessView(QWidget):
     """Таблица процессов с поиском, фильтрами и управлением."""
@@ -377,7 +379,10 @@ class ProcessView(QWidget):
     # Данные
     # ------------------------------------------------------------------
     def set_active(self, active: bool) -> None:
+        was_active = self._active
         self._active = active
+        if active and not was_active and self._latest_payload:
+            self.set_snapshot(self._latest_payload)
 
     def is_active(self) -> bool:
         return self._active
@@ -704,9 +709,3 @@ class ProcessView(QWidget):
             QMessageBox.warning(
                 self, tr("Экспорт"), tr("Не удалось сохранить файл")
             )
-
-
-
-
-
-

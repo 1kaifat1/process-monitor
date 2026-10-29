@@ -28,7 +28,6 @@ _STATUS_LABELS = (
     ("STATUS_WAITING", "Ожидает"),
     ("STATUS_SUSPENDED", "Приостановлен"),
     ("STATUS_PARKED", "Припаркован"),
-    ("STATUS_WAITING", "Ожидает"),
 )
 
 # Часть констант psutil доступна только на отдельных платформах.
@@ -69,6 +68,8 @@ PRIORITIES = {
     "Реального времени": psutil.REALTIME_PRIORITY_CLASS,
 }
 
+PRIORITY_NAMES = {value: name for name, value in PRIORITIES.items()}
+
 
 def _lower(value: str | None) -> str:
     return (value or "").lower()
@@ -91,7 +92,7 @@ class ProcessCollector:
     """Кэширует объекты Process, чтобы корректно считать CPU и не нагружать ПК."""
 
     def __init__(self) -> None:
-        self._cache: dict[tuple[int, float], dict[str, Any]] = {}
+        self._cache: dict[int, dict[str, Any]] = {}
         self._cores = max(1, psutil.cpu_count(logical=True) or 1)
         try:
             self._total_ram = psutil.virtual_memory().total
@@ -126,9 +127,10 @@ class ProcessCollector:
             seen.add(pid)
             entry = self._cache.get(pid)
             create_time = float(item.get("create_time") or 0.0)
-            if entry is None or abs(
-                float(entry.get("create_time") or 0.0) - create_time
-            ) > 1.0:
+            if (
+                not isinstance(entry, dict)
+                or abs(float(entry.get("create_time") or 0.0) - create_time) > 1.0
+            ):
                 entry = {
                     "pid": pid,
                     "name": item.get("name", ""),
@@ -167,9 +169,9 @@ class ProcessCollector:
             budget -= 1
 
         if len(self._cache) > len(seen):
-            for pid in list(self._cache):
-                if pid not in seen:
-                    self._cache.pop(pid, None)
+            for key in list(self._cache):
+                if key not in seen:
+                    self._cache.pop(key, None)
         if len(self._prev_cpu) > len(seen):
             for pid in list(self._prev_cpu):
                 if pid not in seen:
@@ -317,7 +319,6 @@ class ProcessCollector:
             "mem_pct_text": f"{mem_pct:.1f}%",
         }
 
-
     def _snapshot_psutil(self, started: float) -> dict[str, Any]:
         self._visible_windows = visible_windows()
         # Подсчёт дескрипторов — дорогая операция, поэтому только по запросу.
@@ -329,37 +330,42 @@ class ProcessCollector:
             self._with_handles = False
 
         raw_entries: list[tuple[dict[str, Any], dict[str, Any]]] = []
-        current_keys: set[tuple[int, float]] = set()
+        current_pids: set[int] = set()
 
         for proc in psutil.process_iter(
             attrs=["pid", "name", "create_time"], ad_value=None
         ):
             info = proc.info
-            pid = info.get("pid")
-            if pid is None:
+            raw_pid = info.get("pid")
+            if raw_pid is None:
                 continue
-            key = (int(pid), float(info.get("create_time") or 0.0))
-            current_keys.add(key)
-            entry = self._cache.get(key)
-            if entry is None:
+            pid = int(raw_pid)
+            create_time = float(info.get("create_time") or 0.0)
+            current_pids.add(pid)
+            entry = self._cache.get(pid)
+            if (
+                not isinstance(entry, dict)
+                or entry.get("proc") is None
+                or abs(float(entry.get("create_time") or 0.0) - create_time) > 1.0
+            ):
                 entry = {
                     "proc": proc,
-                    "pid": int(pid),
+                    "pid": pid,
                     "name": info.get("name") or f"PID {pid}",
                     "exe": None,
                     "cmdline": None,
                     "user": None,
-                    "create_time": key[1],
+                    "create_time": create_time,
                     "exe_reasons": None,
                     "handles": 0,
                     "handles_ts": 0.0,
                 }
-                self._cache[key] = entry
+                self._cache[pid] = entry
             raw_entries.append((entry, info))
 
-        if len(self._cache) > len(current_keys):
+        if len(self._cache) > len(current_pids):
             for key in list(self._cache):
-                if key not in current_keys:
+                if key not in current_pids:
                     self._cache.pop(key, None)
 
         pids = [entry["pid"] for entry, _info in raw_entries]
@@ -511,6 +517,7 @@ class ProcessCollector:
             flags.append("подозрительный")
 
         cpu_total = round(min(max(cpu_raw / self._cores, 0.0), 100.0), 1)
+        entry["_cpu"] = cpu_total
 
         return {
             "pid": pid,
@@ -635,6 +642,22 @@ class ProcessCollector:
                 result["uptime"] = format_duration(
                     time.time() - (created or time.time())
                 )
+                cached = self._cache.get(pid)
+                cpu_val = (
+                    float(cached.get("_cpu", 0.0))
+                    if isinstance(cached, dict) and "_cpu" in cached
+                    else None
+                )
+                if cpu_val is None:
+                    for row in self._last_rows:
+                        if int(row.get("pid", -1)) == pid:
+                            cpu_val = float(row.get("cpu", 0.0))
+                            break
+                if cpu_val is None:
+                    raw_cpu = float(self._safe(lambda: proc.cpu_percent(None), 0.0))
+                    cpu_val = round(min(max(raw_cpu / self._cores, 0.0), 100.0), 1)
+                result["cpu"] = f"{cpu_val:.1f}%"
+
                 memory = self._safe(proc.memory_info, None)
                 if memory is not None:
                     result["rss"] = format_bytes(memory.rss)
@@ -643,7 +666,12 @@ class ProcessCollector:
                     result["rss"] = "—"
                     result["vms"] = "—"
                 result["mem_pct"] = f"{self._safe(proc.memory_percent, 0.0):.2f}%"
-                result["nice"] = self._safe(proc.nice, "—")
+                nice_val = self._safe(proc.nice, None)
+                result["nice"] = (
+                    PRIORITY_NAMES.get(nice_val, str(nice_val))
+                    if nice_val is not None
+                    else "—"
+                )
                 try:
                     connections = proc.net_connections(kind="inet")
                 except Exception:
@@ -691,5 +719,3 @@ class ProcessCollector:
 
     def last_rows(self) -> list[dict[str, Any]]:
         return self._last_rows
-
-
