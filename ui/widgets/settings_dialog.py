@@ -26,6 +26,11 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config_manager import PROCESS_COLUMNS, config
+from core.explorer_registry import (
+    context_menu_registered,
+    register_context_menu,
+    unregister_context_menu,
+)
 from core.i18n import LANGUAGE_NAMES, tr
 from core.winapi import autostart_enabled, set_autostart
 
@@ -208,14 +213,29 @@ class SettingsDialog(QDialog):
         self.slow_inactive_check = QCheckBox(
             tr("Снижать частоту опроса, когда вкладка неактивна")
         )
+        self.explorer_integration_check = QCheckBox(
+            tr("Интегрировать в контекстное меню Проводника (ПКМ)")
+        )
         for checkbox in (
             self.close_to_tray_check,
             self.start_minimized_check,
             self.autostart_check,
             self.remember_geometry_check,
             self.slow_inactive_check,
+            self.explorer_integration_check,
         ):
             layout.addWidget(checkbox)
+
+        integration_hint = QLabel(
+            tr(
+                "Пункт «Разблокировать / Завершить процесс» появится в контекстном "
+                "меню файлов и папок. Запись выполняется в HKEY_CURRENT_USER и не "
+                "требует прав администратора."
+            )
+        )
+        integration_hint.setObjectName("Muted")
+        integration_hint.setWordWrap(True)
+        layout.addWidget(integration_hint)
 
         hint = QLabel(
             tr(
@@ -300,6 +320,8 @@ class SettingsDialog(QDialog):
             bool(config.get("behavior.slow_when_inactive", True))
         )
         self.autostart_check.setChecked(autostart_enabled())
+        # Источник истины — реестр: настройка могла быть сброшена вручную.
+        self.explorer_integration_check.setChecked(context_menu_registered())
 
     def _save(self) -> None:
         if not any(checkbox.isChecked() for checkbox in self.column_checks.values()):
@@ -313,6 +335,18 @@ class SettingsDialog(QDialog):
         autostart = self.autostart_check.isChecked()
         previous_language = str(config.get("language", "auto"))
         new_language = str(self.language_combo.currentData() or "auto")
+
+        # Интеграция с Проводником: состояние реестра приводим к чекбоксу.
+        want_integration = self.explorer_integration_check.isChecked()
+        registry_ok = True
+        if want_integration != context_menu_registered():
+            registry_ok = (
+                register_context_menu()
+                if want_integration
+                else unregister_context_menu()
+            )
+        explorer_integration = context_menu_registered()
+
         values = {
             "language": new_language,
             "theme": self.theme_combo.currentData() or "dark",
@@ -337,10 +371,22 @@ class SettingsDialog(QDialog):
                 "autostart_app": autostart,
                 "remember_geometry": self.remember_geometry_check.isChecked(),
                 "slow_when_inactive": self.slow_inactive_check.isChecked(),
+                "explorer_integration": explorer_integration,
             },
         }
         config.update(values)
         self.language_changed = previous_language != new_language
+
+        if not registry_ok:
+            self.explorer_integration_check.setChecked(explorer_integration)
+            QMessageBox.warning(
+                self,
+                tr("Контекстное меню"),
+                tr(
+                    "Не удалось изменить пункт контекстного меню Проводника. "
+                    "Проверьте права доступа к реестру."
+                ),
+            )
 
         try:
             from pathlib import Path
@@ -380,6 +426,8 @@ class SettingsDialog(QDialog):
             return
         previous_language = str(config.get("language", "auto"))
         config.reset()
+        if context_menu_registered():
+            unregister_context_menu()
         self.language_changed = previous_language != str(
             config.get("language", "auto")
         )

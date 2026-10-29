@@ -14,6 +14,9 @@ from core.single_instance import SingleInstance
 from core.utils import REPLACE_INSTANCE_FLAG
 from ui.main_window import MainWindow
 from ui.theme import apply_theme, load_app_icon
+from ui.widgets.unlock_dialog import UnlockDialog
+
+UNLOCK_FLAG = "--unlock"
 
 
 def _exception_hook(exc_type, exc_value, exc_traceback) -> None:
@@ -34,10 +37,28 @@ def _exception_hook(exc_type, exc_value, exc_traceback) -> None:
     sys.__excepthook__(exc_type, exc_value, exc_traceback)
 
 
+def _unlock_paths(argv: list[str]) -> list[str]:
+    """Пути, переданные после ``--unlock`` (Проводник передаёт один)."""
+    try:
+        index = argv.index(UNLOCK_FLAG)
+    except ValueError:
+        return []
+    paths: list[str] = []
+    for argument in argv[index + 1 :]:
+        if argument.startswith("--"):
+            break
+        path = argument.strip().strip('"')
+        if path:
+            paths.append(path)
+    return paths
+
+
 def main() -> int:
-    if sys.platform == "win32":
+    unlock_paths = _unlock_paths(sys.argv)
+    if sys.platform == "win32" and not unlock_paths:
         # AUMID + ярлык в меню «Пуск»: иначе панель задач берёт иконку
         # исполняемого файла (для запуска из исходников — pythonw.exe).
+        # Для компактного диалога разблокировки это не нужно.
         prepare_shell_identity()
 
     app = QApplication(sys.argv)
@@ -55,6 +76,12 @@ def main() -> int:
         int(config.get("font_size", 13)),
     )
     sys.excepthook = _exception_hook
+
+    if unlock_paths:
+        # Режим разблокировки: без главного окна, single-instance и трея.
+        for path in unlock_paths:
+            UnlockDialog(path).exec()
+        return 0
 
     single = SingleInstance()
     replace_instance = REPLACE_INSTANCE_FLAG in sys.argv

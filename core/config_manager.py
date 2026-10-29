@@ -84,6 +84,7 @@ DEFAULTS: dict[str, Any] = {
         "autostart_app": False,
         "remember_geometry": True,
         "slow_when_inactive": True,
+        "explorer_integration": False,
     },
     "window": {
         "width": 1320,
