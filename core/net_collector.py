@@ -7,6 +7,7 @@ from typing import Any
 
 import psutil
 
+from .i18n import tr
 from .utils import format_bytes
 
 FAMILY_NAMES = {2: "IPv4", 23: "IPv6"}
@@ -105,9 +106,13 @@ class NetworkCollector:
         try:
             connections = psutil.net_connections(kind="inet")
         except psutil.AccessDenied:
-            return rows, "Нет прав на чтение всех соединений (нужен администратор)"
+            return rows, tr(
+                "Нет прав на чтение всех соединений (нужен администратор)"
+            )
         except Exception as exc:
-            return rows, f"Не удалось получить соединения: {exc}"
+            return rows, tr(
+                "Не удалось получить соединения: {error}", error=exc
+            )
 
         for conn in connections:
             try:
@@ -170,7 +175,7 @@ class NetworkCollector:
                     "name": name,
                     "ip": ipv4 or "—",
                     "up": bool(stat.isup) if stat else False,
-                    "speed": f"{stat.speed} Мбит/с" if stat and stat.speed else "—",
+                    "speed": f"{stat.speed} {tr('Мбит/с')}" if stat and stat.speed else "—",
                     "down": format_bytes(down, per_second=True),
                     "up_rate": format_bytes(up, per_second=True),
                     "received": format_bytes(counter.bytes_recv),

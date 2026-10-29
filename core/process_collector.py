@@ -9,6 +9,7 @@ from typing import Any
 
 import psutil
 
+from .i18n import tr
 from .utils import format_bytes, format_duration, format_timestamp
 from .winapi import file_version_info, process_sessions, visible_windows
 
@@ -558,53 +559,57 @@ class ProcessCollector:
                     process.kill()
                     process.wait(timeout=2)
                 else:
-                    return False, (
+                    return False, tr(
                         "Процесс не завершился за 2 секунды. "
                         "Попробуйте принудительное завершение."
                     )
-            return True, "Процесс завершён"
+            return True, tr("Процесс завершён")
         except psutil.NoSuchProcess:
-            return True, "Процесс уже завершён"
+            return True, tr("Процесс уже завершён")
         except psutil.AccessDenied:
-            return False, "Недостаточно прав. Запустите монитор от администратора."
+            return False, tr(
+                "Недостаточно прав. Запустите монитор от администратора."
+            )
         except Exception as exc:
-            return False, f"Ошибка: {exc}"
+            return False, tr("Ошибка: {error}", error=exc)
 
     def suspend(self, pid: int) -> tuple[bool, str]:
         try:
             self._proc(pid).suspend()
-            return True, "Процесс приостановлен"
+            return True, tr("Процесс приостановлен")
         except psutil.AccessDenied:
-            return False, "Недостаточно прав для приостановки процесса"
+            return False, tr("Недостаточно прав для приостановки процесса")
         except psutil.NoSuchProcess:
-            return False, "Процесс не найден"
+            return False, tr("Процесс не найден")
         except Exception as exc:
-            return False, f"Ошибка: {exc}"
+            return False, tr("Ошибка: {error}", error=exc)
 
     def resume(self, pid: int) -> tuple[bool, str]:
         try:
             self._proc(pid).resume()
-            return True, "Процесс продолжен"
+            return True, tr("Процесс продолжен")
         except psutil.AccessDenied:
-            return False, "Недостаточно прав для продолжения процесса"
+            return False, tr("Недостаточно прав для продолжения процесса")
         except psutil.NoSuchProcess:
-            return False, "Процесс не найден"
+            return False, tr("Процесс не найден")
         except Exception as exc:
-            return False, f"Ошибка: {exc}"
+            return False, tr("Ошибка: {error}", error=exc)
 
     def set_priority(self, pid: int, priority_name: str) -> tuple[bool, str]:
         priority = PRIORITIES.get(priority_name)
         if priority is None:
-            return False, "Неизвестный приоритет"
+            return False, tr("Неизвестный приоритет")
         try:
             self._proc(pid).nice(priority)
-            return True, f"Приоритет изменён: {priority_name}"
+            return True, tr(
+                "Приоритет изменён: {priority}", priority=tr(priority_name)
+            )
         except psutil.AccessDenied:
-            return False, "Недостаточно прав для смены приоритета"
+            return False, tr("Недостаточно прав для смены приоритета")
         except psutil.NoSuchProcess:
-            return False, "Процесс не найден"
+            return False, tr("Процесс не найден")
         except Exception as exc:
-            return False, f"Ошибка: {exc}"
+            return False, tr("Ошибка: {error}", error=exc)
 
     # ------------------------------------------------------------------
     # Подробности

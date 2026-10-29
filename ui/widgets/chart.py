@@ -16,6 +16,8 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import QWidget
 
+from core.i18n import tr
+
 
 class HistoryChart(QWidget):
     """Сглаженная линия с заливкой и авто-масштабом."""
@@ -107,7 +109,7 @@ class HistoryChart(QWidget):
 
         if len(self._values) < 2:
             painter.setPen(QColor("#8b9bb4"))
-            painter.drawText(plot, Qt.AlignmentFlag.AlignCenter, "Сбор данных…")
+            painter.drawText(plot, Qt.AlignmentFlag.AlignCenter, tr("Сбор данных…"))
             painter.end()
             return
 

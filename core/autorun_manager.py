@@ -11,6 +11,7 @@ from typing import Any
 import psutil
 
 from .config_manager import config
+from .i18n import tr
 from .utils import run_hidden
 
 HIVES = {"HKCU": winreg.HKEY_CURRENT_USER, "HKLM": winreg.HKEY_LOCAL_MACHINE}
@@ -207,7 +208,7 @@ class AutorunManager:
     # ------------------------------------------------------------------
     def toggle(self, entry: dict[str, Any]) -> tuple[bool, str]:
         if not entry.get("can_toggle"):
-            return False, "Этот элемент нельзя изменить"
+            return False, tr("Этот элемент нельзя изменить")
         entry_type = entry.get("type")
         if entry_type == "Реестр":
             return self._toggle_registry(entry)
@@ -215,7 +216,7 @@ class AutorunManager:
             return self._toggle_folder(entry)
         if entry_type == "Служба":
             return self._toggle_service(entry)
-        return False, "Неизвестный тип элемента"
+        return False, tr("Неизвестный тип элемента")
 
     @staticmethod
     def _open_key_for_write(hive, key_path: str):
@@ -231,7 +232,7 @@ class AutorunManager:
         value_name = extra.get("value_name", "")
         hive = HIVES.get(hive_name)
         if hive is None or not key_path or not value_name:
-            return False, "Недостаточно данных о записи реестра"
+            return False, tr("Недостаточно данных о записи реестра")
 
         if entry.get("enabled", True):
             try:
@@ -240,9 +241,11 @@ class AutorunManager:
             except FileNotFoundError:
                 pass
             except PermissionError:
-                return False, "Нужны права администратора для изменения этого ключа"
+                return False, tr(
+                    "Нужны права администратора для изменения этого ключа"
+                )
             except OSError as exc:
-                return False, f"Не удалось отключить: {exc}"
+                return False, tr("Не удалось отключить: {error}", error=exc)
             config.add_disabled_autorun(
                 {
                     "id": entry["id"],
@@ -258,49 +261,60 @@ class AutorunManager:
                     },
                 }
             )
-            return True, "Элемент отключён. Значение сохранено в настройках монитора."
+            return True, tr(
+                "Элемент отключён. Значение сохранено в настройках монитора."
+            )
 
         command = extra.get("command") or entry.get("command", "")
         try:
             with self._open_key_for_write(hive, key_path) as key:
                 winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, command)
         except PermissionError:
-            return False, "Нужны права администратора для изменения этого ключа"
+            return False, tr(
+                "Нужны права администратора для изменения этого ключа"
+            )
         except OSError as exc:
-            return False, f"Не удалось включить: {exc}"
+            return False, tr("Не удалось включить: {error}", error=exc)
         config.remove_disabled_autorun(entry["id"])
-        return True, "Элемент снова включён в автозагрузку"
+        return True, tr("Элемент снова включён в автозагрузку")
 
     def _toggle_folder(self, entry: dict[str, Any]) -> tuple[bool, str]:
         path = Path(entry.get("extra", {}).get("path", ""))
         if not path or not path.exists():
-            return False, "Файл автозагрузки не найден"
+            return False, tr("Файл автозагрузки не найден")
         try:
             if entry.get("enabled", True):
                 if not path.name.lower().endswith(".disabled"):
                     path.rename(path.with_name(path.name + ".disabled"))
-                return True, "Элемент отключён (файл переименован в .disabled)"
+                return True, tr(
+                    "Элемент отключён (файл переименован в .disabled)"
+                )
             if path.name.lower().endswith(".disabled"):
                 path.rename(path.with_name(path.name[:-9]))
-            return True, "Элемент снова включён в автозагрузку"
+            return True, tr("Элемент снова включён в автозагрузку")
         except PermissionError:
-            return False, "Недостаточно прав для переименования файла"
+            return False, tr("Недостаточно прав для переименования файла")
         except OSError as exc:
-            return False, f"Не удалось изменить файл: {exc}"
+            return False, tr("Не удалось изменить файл: {error}", error=exc)
 
     def _toggle_service(self, entry: dict[str, Any]) -> tuple[bool, str]:
         service_name = entry.get("extra", {}).get("service", "")
         if not service_name:
-            return False, "Не найдено имя службы"
+            return False, tr("Не найдено имя службы")
         action = "disabled" if entry.get("enabled", True) else "auto"
         code, out, err = run_hidden(["sc", "config", service_name, "start=", action])
         if code == 0:
-            state = "отключена" if action == "disabled" else "включена"
-            return True, f"Служба {state}. Изменения вступят в силу после перезагрузки."
+            state = tr("отключена") if action == "disabled" else tr("включена")
+            return True, tr(
+                "Служба {state}. Изменения вступят в силу после перезагрузки.",
+                state=state,
+            )
         message = (err or out).strip()
         lowered = message.lower()
         if "отказано" in lowered or "access is denied" in lowered:
-            return False, "Нужны права администратора для изменения службы"
-        return False, message or "Не удалось изменить службу"
+            return False, tr(
+                "Нужны права администратора для изменения службы"
+            )
+        return False, message or tr("Не удалось изменить службу")
 
 

@@ -7,9 +7,13 @@ import traceback
 
 from PyQt6.QtWidgets import QApplication, QMessageBox, QStyleFactory
 
+from core.app_identity import prepare_shell_identity
 from core.config_manager import CONFIG_DIR, config
+from core.i18n import apply_config_language, tr
+from core.single_instance import SingleInstance
+from core.utils import REPLACE_INSTANCE_FLAG
 from ui.main_window import MainWindow
-from ui.theme import apply_theme, create_app_icon
+from ui.theme import apply_theme, load_app_icon
 
 
 def _exception_hook(exc_type, exc_value, exc_traceback) -> None:
@@ -21,7 +25,9 @@ def _exception_hook(exc_type, exc_value, exc_traceback) -> None:
         pass
     try:
         QMessageBox.critical(
-            None, "Pulse Monitor — ошибка", text[-3500:] or "Неизвестная ошибка"
+            None,
+            tr("Pulse Monitor — ошибка"),
+            text[-3500:] or tr("Неизвестная ошибка"),
         )
     except Exception:
         pass
@@ -30,14 +36,9 @@ def _exception_hook(exc_type, exc_value, exc_traceback) -> None:
 
 def main() -> int:
     if sys.platform == "win32":
-        try:
-            import ctypes
-
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                "PulseMonitor.1.0"
-            )
-        except Exception:
-            pass
+        # AUMID + ярлык в меню «Пуск»: иначе панель задач берёт иконку
+        # исполняемого файла (для запуска из исходников — pythonw.exe).
+        prepare_shell_identity()
 
     app = QApplication(sys.argv)
     app.setApplicationName("Pulse Monitor")
@@ -45,7 +46,8 @@ def main() -> int:
     app.setOrganizationName("PulseMonitor")
     app.setApplicationVersion("1.0.0")
     app.setStyle(QStyleFactory.create("Fusion"))
-    app.setWindowIcon(create_app_icon(128))
+    app.setWindowIcon(load_app_icon(128))
+    apply_config_language()
     apply_theme(
         app,
         str(config.get("theme", "dark")),
@@ -54,7 +56,16 @@ def main() -> int:
     )
     sys.excepthook = _exception_hook
 
+    single = SingleInstance()
+    replace_instance = REPLACE_INSTANCE_FLAG in sys.argv
+    if not replace_instance and single.notify_existing():
+        # Приложение уже работает (возможно, в трее) — окно показал он.
+        return 0
+
     window = MainWindow()
+    single.show_requested.connect(window.present)
+    single.listen(takeover=replace_instance)
+
     start_minimized = bool(config.get("behavior.start_minimized", False))
     if not (start_minimized and window.tray is not None):
         window.show()

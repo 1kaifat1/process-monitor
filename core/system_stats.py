@@ -8,6 +8,7 @@ import time
 
 import psutil
 
+from .i18n import tr
 from .utils import format_bytes, format_duration, format_timestamp
 
 _cpu_name_cache: str | None = None
@@ -29,7 +30,7 @@ def cpu_name() -> str:
             name = str(winreg.QueryValueEx(key, "ProcessorNameString")[0]).strip()
     except Exception:
         name = platform.processor()
-    _cpu_name_cache = name or "Неизвестный процессор"
+    _cpu_name_cache = name or tr("Неизвестный процессор")
     return _cpu_name_cache
 
 

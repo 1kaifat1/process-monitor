@@ -32,6 +32,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config_manager import PROCESS_COLUMNS, config
+from core.i18n import tr
 from core.utils import export_csv, format_bytes, open_in_explorer
 
 NUMERIC_KEYS = {"pid", "ppid", "cpu", "mem", "mem_pct", "threads", "handles", "session"}
@@ -44,6 +45,10 @@ def _display(row: dict, key: str) -> str:
         return row.get("cpu_text") or f"{row.get('cpu', 0):.1f}%"
     if key == "mem_pct":
         return row.get("mem_pct_text") or f"{row.get('mem_pct', 0):.1f}%"
+    if key == "flags":
+        return ", ".join(tr(flag) for flag in row.get("flags_list", []))
+    if key == "status":
+        return tr(str(row.get("status", "")))
     value = row.get(key, "")
     return "" if value is None else str(value)
 
@@ -76,7 +81,7 @@ class ProcessTableModel(QAbstractTableModel):
         for key, title, width, _default in PROCESS_COLUMNS:
             if config.get(f"processes.columns.{key}", True):
                 self._keys.append(key)
-                self._headers.append(title)
+                self._headers.append(tr(title))
                 self._widths.append(width)
         self.endResetModel()
 
@@ -103,15 +108,24 @@ class ProcessTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.ToolTipRole:
             lines = [
                 f"{row.get('name', '')} (PID {row.get('pid', '')})",
-                f"Путь: {row.get('exe') or '—'}",
-                f"Командная строка: {row.get('cmdline') or '—'}",
-                f"Пользователь: {row.get('user') or '—'}",
-                f"Окно: {row.get('window') or '—'}",
+                tr("Путь: {path}", path=row.get("exe") or "—"),
+                tr("Командная строка: {cmd}", cmd=row.get("cmdline") or "—"),
+                tr("Пользователь: {user}", user=row.get("user") or "—"),
+                tr("Окно: {title}", title=row.get("window") or "—"),
             ]
             if row.get("suspicious_reasons"):
-                lines.append("Признаки: " + ", ".join(row["suspicious_reasons"]))
-            if row.get("flags"):
-                lines.append("Флаги: " + row["flags"])
+                lines.append(
+                    tr("Признаки: {reasons}", reasons=", ".join(
+                        tr(reason) for reason in row["suspicious_reasons"]
+                    ))
+                )
+            if row.get("flags_list"):
+                lines.append(
+                    tr(
+                        "Флаги: {flags}",
+                        flags=", ".join(tr(flag) for flag in row["flags_list"]),
+                    )
+                )
             return "\n".join(lines)
         if role == Qt.ItemDataRole.BackgroundRole:
             if row.get("suspicious"):
@@ -194,8 +208,9 @@ class ProcessFilterProxy(QSortFilterProxyModel):
             haystack = " ".join(
                 str(row.get(key, ""))
                 for key in ("name", "pid", "exe", "cmdline", "user", "flags", "window")
-            ).lower()
-            if self._search not in haystack:
+            )
+            haystack += " " + " ".join(tr(flag) for flag in flags)
+            if self._search not in haystack.lower():
                 return False
         return True
 
@@ -223,26 +238,28 @@ class ProcessView(QWidget):
         toolbar.setSpacing(8)
 
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Поиск: имя, PID, путь, пользователь, окно…")
+        self.search.setPlaceholderText(
+            tr("Поиск: имя, PID, путь, пользователь, окно…")
+        )
         self.search.setClearButtonEnabled(True)
         self.search.setMinimumWidth(220)
 
         self.mode = QComboBox()
-        self.mode.addItem("Все процессы", "all")
-        self.mode.addItem("Только скрытые", "hidden")
-        self.mode.addItem("Только подозрительные", "suspicious")
+        self.mode.addItem(tr("Все процессы"), "all")
+        self.mode.addItem(tr("Только скрытые"), "hidden")
+        self.mode.addItem(tr("Только подозрительные"), "suspicious")
         self.mode.setMinimumWidth(170)
         current_mode = config.get("processes.mode", "all")
         index = self.mode.findData(current_mode)
         self.mode.setCurrentIndex(max(0, index))
 
-        self.system_check = QCheckBox("Системные")
+        self.system_check = QCheckBox(tr("Системные"))
         self.system_check.setChecked(bool(config.get("processes.show_system", True)))
 
-        self.refresh_button = QPushButton("Обновить")
-        self.kill_button = QPushButton("Завершить")
+        self.refresh_button = QPushButton(tr("Обновить"))
+        self.kill_button = QPushButton(tr("Завершить"))
         self.kill_button.setObjectName("DangerButton")
-        self.more_button = QPushButton("Ещё")
+        self.more_button = QPushButton(tr("Ещё"))
 
         toolbar.addWidget(self.search, 2)
         toolbar.addWidget(self.mode)
@@ -283,7 +300,7 @@ class ProcessView(QWidget):
 
         footer = QHBoxLayout()
         footer.setSpacing(10)
-        self.stats_label = QLabel("Ожидание данных…")
+        self.stats_label = QLabel(tr("Ожидание данных…"))
         self.stats_label.setObjectName("Muted")
         self.sampling_label = QLabel("")
         self.sampling_label.setObjectName("Muted")
@@ -304,16 +321,16 @@ class ProcessView(QWidget):
 
     def _build_menu(self) -> None:
         menu = QMenu(self)
-        menu.addAction("Подробная информация", self.show_details)
-        menu.addAction("Приостановить процесс", self.suspend_selected)
-        menu.addAction("Продолжить процесс", self.resume_selected)
-        menu.addAction("Приоритет…", self.change_priority)
+        menu.addAction(tr("Подробная информация"), self.show_details)
+        menu.addAction(tr("Приостановить процесс"), self.suspend_selected)
+        menu.addAction(tr("Продолжить процесс"), self.resume_selected)
+        menu.addAction(tr("Приоритет…"), self.change_priority)
         menu.addSeparator()
-        menu.addAction("Открыть расположение файла", self.open_folder)
-        menu.addAction("Скопировать сведения", self.copy_info)
-        menu.addAction("Экспорт в CSV…", self.export_csv_dialog)
+        menu.addAction(tr("Открыть расположение файла"), self.open_folder)
+        menu.addAction(tr("Скопировать сведения"), self.copy_info)
+        menu.addAction(tr("Экспорт в CSV…"), self.export_csv_dialog)
         menu.addSeparator()
-        menu.addAction("Завершить принудительно", self.kill_selected_force)
+        menu.addAction(tr("Завершить принудительно"), self.kill_selected_force)
         self.more_button.setMenu(menu)
         self.context_menu = menu
 
@@ -369,7 +386,9 @@ class ProcessView(QWidget):
         try:
             payload = self.collector.snapshot()
         except Exception as exc:
-            self.status_message.emit(f"Ошибка опроса процессов: {exc}")
+            self.status_message.emit(
+                tr("Ошибка опроса процессов: {error}", error=exc)
+            )
             return
         self.set_snapshot(payload)
 
@@ -392,9 +411,17 @@ class ProcessView(QWidget):
         suspicious = stats.get("suspicious", 0)
         shown = self.proxy.rowCount()
         self.stats_label.setText(
-            f"Показано {shown} из {total} · скрытых {hidden} · подозрительных {suspicious}"
+            tr(
+                "Показано {shown} из {total} · скрытых {hidden} · подозрительных {suspicious}",
+                shown=shown,
+                total=total,
+                hidden=hidden,
+                suspicious=suspicious,
+            )
         )
-        self.sampling_label.setText(f"опрос {stats.get('elapsed_ms', 0):.0f} мс")
+        self.sampling_label.setText(
+            tr("опрос {ms:.0f} мс", ms=stats.get("elapsed_ms", 0))
+        )
 
     def _top_pid(self):
         index = self.table.indexAt(QPoint(5, 5))
@@ -487,7 +514,7 @@ class ProcessView(QWidget):
     def _require_selection(self) -> list[dict]:
         rows = self.selected_rows()
         if not rows:
-            self.status_message.emit("Сначала выберите процесс в таблице")
+            self.status_message.emit(tr("Сначала выберите процесс в таблице"))
         return rows
 
     def kill_selected(self) -> None:
@@ -502,11 +529,11 @@ class ProcessView(QWidget):
         if config.get("processes.confirm_kill", True):
             names = ", ".join(f"{row['name']} ({row['pid']})" for row in rows[:5])
             if len(rows) > 5:
-                names += f" и ещё {len(rows) - 5}"
+                names += " " + tr("и ещё {count}", count=len(rows) - 5)
             answer = QMessageBox.question(
                 self,
-                "Завершение процессов",
-                f"Завершить: {names}?",
+                tr("Завершение процессов"),
+                tr("Завершить: {names}?", names=names),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -518,7 +545,9 @@ class ProcessView(QWidget):
         for row in rows:
             pid = int(row["pid"])
             if pid <= 4:
-                errors.append(f"{row['name']}: системный процесс защищён")
+                errors.append(
+                    f"{row['name']}: {tr('системный процесс защищён')}"
+                )
                 continue
             ok, message = self.collector.terminate(pid, force=force)
             if ok:
@@ -530,17 +559,23 @@ class ProcessView(QWidget):
         if errors:
             QMessageBox.warning(
                 self,
-                "Результат завершения",
-                f"Завершено процессов: {done}\n\n" + "\n".join(errors[:10]),
+                tr("Результат завершения"),
+                tr(
+                    "Завершено процессов: {count}\n\n{errors}",
+                    count=done,
+                    errors="\n".join(errors[:10]),
+                ),
             )
         else:
-            self.status_message.emit(f"Завершено процессов: {done}")
+            self.status_message.emit(
+                tr("Завершено процессов: {count}", count=done)
+            )
 
     def suspend_selected(self) -> None:
-        self._apply_to_selected("suspend", "приостановлен")
+        self._apply_to_selected("suspend", tr("приостановлено"))
 
     def resume_selected(self) -> None:
-        self._apply_to_selected("resume", "продолжен")
+        self._apply_to_selected("resume", tr("продолжено"))
 
     def _apply_to_selected(self, action: str, action_label: str) -> None:
         rows = self._require_selection()
@@ -557,9 +592,13 @@ class ProcessView(QWidget):
                 errors.append(f"{row['name']}: {message}")
         self.refresh_now()
         if errors:
-            QMessageBox.warning(self, "Результат", "\n".join(errors[:10]))
+            QMessageBox.warning(
+                self, tr("Результат"), "\n".join(errors[:10])
+            )
         else:
-            self.status_message.emit(f"Процессов {action_label}: {done}")
+            self.status_message.emit(
+                tr("Процессов {action}: {count}", action=action_label, count=done)
+            )
 
     def change_priority(self) -> None:
         rows = self._require_selection()
@@ -568,21 +607,29 @@ class ProcessView(QWidget):
         from core.process_collector import PRIORITIES
 
         row = rows[0]
+        priority_labels = [tr(name) for name in PRIORITIES]
         priority, accepted = QInputDialog.getItem(
             self,
-            "Приоритет процесса",
-            f"Новый приоритет для {row['name']} ({row['pid']}):",
-            list(PRIORITIES.keys()),
+            tr("Приоритет процесса"),
+            tr(
+                "Новый приоритет для {name} ({pid}):",
+                name=row["name"],
+                pid=row["pid"],
+            ),
+            priority_labels,
             2,
             False,
         )
         if not accepted:
             return
-        ok, message = self.collector.set_priority(int(row["pid"]), priority)
+        priority_name = list(PRIORITIES.keys())[priority_labels.index(priority)]
+        ok, message = self.collector.set_priority(
+            int(row["pid"]), priority_name
+        )
         if ok:
             self.status_message.emit(message)
         else:
-            QMessageBox.warning(self, "Приоритет", message)
+            QMessageBox.warning(self, tr("Приоритет"), message)
 
     def open_folder(self) -> None:
         rows = self._require_selection()
@@ -592,13 +639,17 @@ class ProcessView(QWidget):
         if not row.get("exe"):
             QMessageBox.information(
                 self,
-                "Расположение файла",
-                "Путь к файлу процесса недоступен. "
-                "Попробуйте запустить монитор от имени администратора.",
+                tr("Расположение файла"),
+                tr(
+                    "Путь к файлу процесса недоступен. "
+                    "Попробуйте запустить монитор от имени администратора."
+                ),
             )
             return
         if not open_in_explorer(row["exe"]):
-            QMessageBox.warning(self, "Проводник", "Не удалось открыть папку процесса")
+            QMessageBox.warning(
+                self, tr("Проводник"), tr("Не удалось открыть папку процесса")
+            )
 
     def copy_info(self) -> None:
         rows = self._require_selection()
@@ -613,7 +664,7 @@ class ProcessView(QWidget):
             if row.get("cmdline"):
                 lines.append(f"    {row['cmdline']}")
         QGuiApplication.clipboard().setText("\n".join(lines))
-        self.status_message.emit(f"Скопировано строк: {len(rows)}")
+        self.status_message.emit(tr("Скопировано строк: {count}", count=len(rows)))
 
     def show_details(self) -> None:
         rows = self._require_selection()
@@ -627,22 +678,32 @@ class ProcessView(QWidget):
     def export_csv_dialog(self) -> None:
         rows = self.selected_rows() or self.visible_rows()
         if not rows:
-            QMessageBox.information(self, "Экспорт", "Нет данных для экспорта")
+            QMessageBox.information(
+                self, tr("Экспорт"), tr("Нет данных для экспорта")
+            )
             return
         path, _filter = QFileDialog.getSaveFileName(
-            self, "Экспорт процессов", "processes.csv", "CSV (*.csv)"
+            self, tr("Экспорт процессов"), "processes.csv", "CSV (*.csv)"
         )
         if not path:
             return
-        headers = [title for _key, title, _width, _default in PROCESS_COLUMNS]
+        headers = [tr(title) for _key, title, _width, _default in PROCESS_COLUMNS]
         data = [
             [_display(row, key) for key, _title, _width, _default in PROCESS_COLUMNS]
             for row in rows
         ]
         if export_csv(path, headers, data):
-            self.status_message.emit(f"Экспортировано строк: {len(rows)} → {path}")
+            self.status_message.emit(
+                tr(
+                    "Экспортировано строк: {count} → {path}",
+                    count=len(rows),
+                    path=path,
+                )
+            )
         else:
-            QMessageBox.warning(self, "Экспорт", "Не удалось сохранить файл")
+            QMessageBox.warning(
+                self, tr("Экспорт"), tr("Не удалось сохранить файл")
+            )
 
 
 

@@ -1,113 +1,143 @@
 # Pulse Monitor
 
-Лёгкий монитор Windows: процессы (включая скрытые и фоновые), сеть, автозагрузка,
-графики нагрузки и гибкая кастомизация. Работает как обычное окно или как фоновый
-сервис в трее. Написан на Python + PyQt6 + psutil.
+**English** · [Русский](README.ru.md)
 
-## Быстрый старт
+A lightweight Windows monitor: processes (including hidden and background ones),
+network, startup entries, load charts and flexible customization. It works as a
+regular window or as a background tray app. Built with Python + PyQt6 + psutil.
 
-**Готовый EXE (рекомендуется):** `PulseMonitor.exe` — один файл, Python не нужен.
-Он собирается из этого репозитория командой `build.bat` и публикуется в
-GitHub Actions как артефакт `PulseMonitor-windows`.
+## Taskbar icon
 
-- Настройки portable-версии лежат в папке `config` рядом с EXE. Если папка
-  недоступна для записи (например, `C:\Program Files`), используется
-  `%APPDATA%\PulseMonitor\config`.
-- Файл не подписан сертификатом, поэтому SmartScreen может показать
-  предупреждение «Неизвестный издатель» — это нормально для сборок с GitHub.
+Windows identifies a taskbar "application" by its AppUserModelID (AUMID), not by
+the window icon. On start Pulse Monitor therefore:
 
-**Из исходников:**
+- assigns the process the AUMID `PulseMonitor.1.0`;
+- creates (or refreshes) the **Pulse Monitor** shortcut in the Start menu —
+  `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Pulse Monitor.lnk` — with the
+  same AUMID and the `assets/pulse.ico` icon (for the EXE build, the EXE icon).
+
+As a result the taskbar button, pinning, Alt+Tab and notifications show the pulse
+icon instead of the generic `pythonw.exe` icon that Windows uses for Python
+scripts by default.
+
+The app runs as a single instance: launching it again does not create a second
+window or a second taskbar button — it brings the running instance to the front
+(including from the tray). This also matters for the icon: two processes with the
+same AUMID merge into one button and Windows may show the icon of the wrong
+executable.
+
+## Languages
+
+Pulse Monitor ships with a built-in localization layer:
+
+- **Russian** and **English** interface
+- **Settings → Appearance → Interface language** switches the language instantly
+  (the main window is recreated, no application restart)
+- the default interface language is Russian; English and “System (auto)” are
+  available in the same menu
+- the choice is stored in `config/settings.json` and survives updates
+
+## Quick start
+
+**Ready-made EXE (recommended):** `PulseMonitor.exe` — a single file, Python is
+not required. It is built from this repository with `build.bat` and published by
+GitHub Actions as the `PulseMonitor-windows` artifact.
+
+- Portable settings live in the `config` folder next to the EXE. If the folder
+  is not writable (for example `C:\Program Files`),
+  `%APPDATA%\PulseMonitor\config` is used instead.
+- The binary is not code-signed, so SmartScreen may warn about an unknown
+  publisher — this is normal for GitHub builds.
+
+**From source:**
 
 ```bat
-install.bat      :: установить зависимости
-run.bat          :: запуск без консоли (pythonw), работа в трее
-run-console.bat  :: запуск с консолью — для диагностики
+install.bat      :: install dependencies
+run.bat          :: run without a console (pythonw), tray mode
+run-console.bat  :: run with a console for diagnostics
 ```
 
-Или вручную:
+Or manually:
 
 ```bat
 python -m pip install -r requirements.txt
 python main.py
 ```
 
-## Как найти приложение в Диспетчере задач
+## How to find the app in Task Manager
 
-| Где искать | Что видно |
+| Where | What to look for |
 |---|---|
-| **Процессы** (вкладка «Приложения») | «Pulse Monitor» — если окно открыто |
-| **Подробности** | `PulseMonitor.exe` (EXE-сборка) или `pythonw.exe` с `main.py` в командной строке (запуск через `run.bat`) |
-| **Автозагрузка** | `PulseMonitor` — если включён автозапуск в настройках |
-| **Область уведомлений** | иконка пульса; двойной клик открывает окно, правый клик — меню |
+| **Details** (`Ctrl+Shift+Esc` → Details) | `PulseMonitor.exe` — start typing `Pulse` in the search box |
+| **Processes** (Apps) | **Pulse Monitor** group when the window is open |
+| **Startup** | `PulseMonitor` if autostart is enabled in the settings |
+| **Notification area** | pulse icon: double-click to open, right-click for the menu |
 
-Быстрый поиск: `Ctrl+Shift+Esc` → вкладка «Подробности» → начните вводить
-`Pulse`. Чтобы увидеть командную строку, щёлкните правой кнопкой по заголовку
-таблицы и включите столбец «Командная строка».
+In a onefile build Task Manager may show **two** `PulseMonitor.exe` processes:
+the bootloader unpacks the app into a temporary folder and starts the child
+process. This is normal; close both (or use **Quit** in the tray menu).
 
-> В onefile-сборке Диспетчер задач может показывать **два** процесса
-> `PulseMonitor.exe`: загрузчик распаковывает приложение во временную папку и
-> запускает дочерний процесс. Это нормально; завершать нужно оба (или через
-> меню «Выход» в трее).
+If you run from source via `run.bat`, Task Manager shows `pythonw.exe`; enable
+the **Command line** column to see `main.py`.
 
-> Приложение не создаёт службу Windows и не устанавливается в систему:
-> это обычный процесс, который завершается вместе с окном (или остаётся в трее,
-> если включено «Закрывать в трей»).
+> Pulse Monitor does not install a Windows service and does not modify the
+> system: it is a regular process that exits with the window (or stays in the
+> tray when “Close to tray” is enabled).
 
-## Возможности
+## Features
 
-- **Процессы** — PID, имя, CPU, память, потоки, дескрипторы, пользователь, сессия,
-  окно, путь, командная строка, дата запуска, флаги «системный / служба / скрыт /
-  подозрительный».
-  - Поиск по имени, PID, пути, пользователю и заголовку окна.
-  - Режимы «только скрытые» и «только подозрительные», скрытие системных процессов.
-  - Сортировка по любому столбцу, выбор нескольких строк.
-  - Завершение (обычное и принудительное), пауза/продолжение, смена приоритета,
-    открытие папки файла, копирование сведений, подробная карточка, экспорт CSV.
-- **Скрытые приложения** — процессы пользовательской сессии без видимого окна
-  (трей-приложения, фоновые службы приложений) помечаются флагом «скрыт».
-  Системные процессы и службы видны отдельно (флаги «системный» и «служба»).
-- **Подозрительные процессы** — эвристики: запуск из TEMP, системное имя вне
-  System32/Windows, отсутствующий файл, системное имя в пользовательской папке,
-  недоступный путь у процесса с системным именем.
-- **Сеть** — скорость приёма/передачи, графики, таблица интерфейсов, все TCP/UDP
-  соединения с привязкой к процессу, фильтры «только установленные» и «скрыть
-  локальные», завершение процесса по соединению, экспорт CSV.
-- **Автозагрузка** — реестр (HKCU/HKLM, Run/RunOnce, WOW6432Node), папки
-  «Автозагрузка» пользователя и всех пользователей, автоматические службы.
-  Включение/отключение записей без сторонних утилит.
-- **Обзор** — CPU/RAM/диск/сеть/аптайм, три графика истории, топ процессов по CPU
-  и памяти, сведения о системе.
-- **Кастомизация** — тёмная/светлая тема, любой акцентный цвет, размер шрифта,
-  набор столбцов, интервалы обновления, поведение трея и автозапуска, экспорт и
-  импорт настроек в JSON.
-- **Фоновый режим** — закрытие окна скрывает его в трей, опрос продолжается.
-  При неактивной вкладке частота опроса автоматически снижается в 3 раза.
+- **Processes** — PID, name, CPU, memory, threads, handles, user, session,
+  window, path, command line, start time and flags
+  “system / service / hidden / suspicious”.
+  - Search by name, PID, path, user or window title.
+  - Modes “hidden only” and “suspicious only”, hiding system processes.
+  - Sorting by any column, multi-row selection.
+  - Terminate (normal and forced), suspend/resume, change priority, open the
+    file location, copy details, detailed card, CSV export.
+- **Hidden applications** — user-session processes without a visible window
+  (tray apps, background app services) are marked as “hidden”. System
+  processes and services are shown separately (flags “system” and “service”).
+- **Suspicious processes** — heuristics: running from TEMP, system name outside
+  System32/Windows, missing file, system name in a user folder, inaccessible
+  path for a process with a system name.
+- **Network** — receive/send speed, charts, interface table, all TCP/UDP
+  connections mapped to processes, filters “established only” and “hide
+  loopback”, terminate the owning process, CSV export.
+- **Startup** — registry (HKCU/HKLM, Run/RunOnce, WOW6432Node), user and
+  all-users Startup folders, automatic services. Enable/disable entries
+  without third-party tools.
+- **Overview** — CPU/RAM/disk/network/uptime, three history charts, top
+  processes by CPU and memory, system information.
+- **Customization** — dark/light theme, any accent color, font size, column
+  set, refresh intervals, tray/autostart behavior, JSON settings export/import.
+- **Background mode** — closing the window hides it to the tray and polling
+  continues. Inactive tabs are polled 3× slower automatically.
 
-## Требования
+## Requirements
 
 - Windows 10/11 (x64)
-- Для EXE: ничего, кроме Windows
-- Для исходников: Python 3.10+ (проверено на 3.15), `PyQt6`, `psutil`
+- For the EXE: nothing but Windows
+- For source: Python 3.10+ (tested on 3.15), `PyQt6`, `psutil`
 
-## Самопроверка
+## Self-check
 
-Проверяет ядро без запуска окна: процессы, скрытые/подозрительные, сеть,
-автозагрузку, метрики и конфигурацию.
+Validates the core without opening a window: processes, hidden/suspicious
+flags, network, startup entries, metrics and configuration.
 
 ```bat
 python selfcheck.py
 ```
 
-## Сборка EXE
+## Building the EXE
 
 ```bat
 build.bat
 ```
 
-Скрипт установит PyInstaller (если его нет), создаст иконку (при необходимости)
-и соберёт `dist\PulseMonitor.exe` — один файл, без консольного окна.
+The script installs PyInstaller if needed, generates the icon when missing and
+produces `dist\PulseMonitor.exe` — a single windowed file.
 
-Вручную:
+Manually:
 
 ```bat
 python -m pip install -r requirements-dev.txt
@@ -115,122 +145,127 @@ python tools\make_icon.py
 python -m PyInstaller --noconfirm --clean PulseMonitor.spec
 ```
 
-Детали сборки: `PulseMonitor.spec` (onefile, windowed, иконка
-`assets/pulse.ico`, ресурсы версии `packaging/version_info.txt`).
-Размер EXE ~35–40 МБ — в основном Qt6. Приложение стартует на 1–2 секунды
-дольше исходников из-за распаковки onefile во временную папку.
+Build details: `PulseMonitor.spec` (onefile, windowed, `assets/pulse.ico`,
+version resources from `packaging/version_info.txt`). The EXE is ~35–40 MB
+(mostly Qt6) and starts 1–2 seconds slower than the sources because onefile is
+unpacked into a temporary folder.
 
-## Горячие клавиши
+## Hotkeys
 
-| Клавиши | Действие |
+| Keys | Action |
 |---|---|
-| `F5` | Обновить текущую вкладку |
-| `Ctrl+F` | Фокус в поиск процессов |
-| `Ctrl+1…4` | Переключение вкладок |
-| `Ctrl+,` | Настройки |
-| `Ctrl+Q` | Выход |
+| `F5` | Refresh the current tab |
+| `Ctrl+F` | Focus the process search |
+| `Ctrl+1…4` | Switch tabs |
+| `Ctrl+,` | Settings |
+| `Ctrl+Q` | Quit |
 
-## Права администратора
+## Administrator rights
 
-Без повышения прав доступна только часть данных: пути и командные строки
-защищённых процессов, системные ключи реестра, изменение служб. В боковой панели
-есть кнопка **«Запустить от администратора»** (UAC). С правами администратора
-видны также все сетевые соединения.
+Without elevation only part of the data is available: paths and command lines
+of protected processes, system registry keys, service changes. The sidebar has
+a **Run as administrator** button (UAC). Elevated mode also exposes all network
+connections.
 
-## Настройки и файлы
+## Settings and files
 
-- `config/settings.json` — все настройки (тема, акцент, интервалы, столбцы,
-  геометрия окна, отключённые элементы автозагрузки).
-- `config/settings.backup.json` — резервная копия при повреждении JSON.
-- `config/error.log` — стек ошибок, если приложение упало.
-- Экспорт/импорт настроек — в диалоге настроек.
-- Расположение папки `config`:
-  - из исходников — рядом с проектом;
-  - из EXE — рядом с `PulseMonitor.exe` (portable), иначе
+- `config/settings.json` — all settings (language, theme, accent, intervals,
+  columns, window geometry, disabled startup entries).
+- `config/settings.backup.json` — backup created when the JSON is corrupted.
+- `config/error.log` — stack trace if the app crashes.
+- Export/import of settings is available in the settings dialog.
+- `config` location:
+  - from source — next to the project;
+  - from the EXE — next to `PulseMonitor.exe` (portable), otherwise
     `%APPDATA%\PulseMonitor\config`.
-- Автозапуск приложения — галочка в настройках (пишется в
-  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`). Для исходников
-  используется `pythonw.exe`, для EXE — сам `PulseMonitor.exe`.
+- Application autostart — a checkbox in the settings (written to
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`). Sources use
+  `pythonw.exe`, the EXE uses `PulseMonitor.exe` itself.
 
-## Приватность
+## Privacy
 
-- Приложение не отправляет данные в сеть, не содержит телеметрии, рекламы и
-  аналитики.
-- В репозитории нет личных данных, токенов и путей конкретных пользователей:
-  все пути вычисляются во время работы.
-- Локально сохраняются только настройки и, при сбое, `config/error.log`.
-  Эти файлы исключены через `.gitignore`.
-- Для работы с защищёнными процессами может потребоваться запуск от
-  администратора — приложение не запрашивает пароли и не устанавливает драйверы.
+- No telemetry, ads, analytics or outbound requests.
+- The repository contains no personal data, tokens or user-specific paths:
+  every path is resolved at runtime.
+- Only settings and, on a crash, `config/error.log` are stored locally. They
+  are excluded via `.gitignore`.
+- Protected processes may require administrator rights — the app never asks
+  for passwords and does not install drivers.
 
-## Как удалось снизить нагрузку
+## Why it stays lightweight
 
-- Снимок процессов выполняется **одним** вызовом `NtQuerySystemInformation`
-  (`core/sysinfo.py`): ~5–15 мс на ~300 процессов вместо ~2 секунд при опросе
-  psutil по каждому процессу. При ошибке автоматически используется psutil.
-- Дорогие данные (путь, командная строка, пользователь) добираются порциями
-  с ограничением ~40 мс на цикл и кэшируются до завершения процесса.
-- Таблицы построены на `QAbstractTableModel`, а не на `QTableWidget`, поэтому
-  обновление сотен строк не создаёт виджеты заново.
-- Потоки опроса замедляются, когда вкладка неактивна или окно скрыто.
-- Нет тяжёлых зависимостей: только PyQt6 и psutil; графики нарисованы на QPainter
-  без QtCharts.
+- Process snapshots use **one** `NtQuerySystemInformation` call
+  (`core/sysinfo.py`): ~5–20 ms for ~300 processes instead of ~2 seconds when
+  querying psutil per process. On failure it falls back to psutil automatically.
+- Expensive data (path, command line, user) is fetched in small batches with a
+  ~40 ms per-cycle budget and cached until the process exits.
+- Tables are based on `QAbstractTableModel` instead of `QTableWidget`, so
+  refreshing hundreds of rows does not recreate widgets.
+- Polling threads slow down when the tab is inactive or the window is hidden.
+- No heavy dependencies: only PyQt6 and psutil; charts are drawn with QPainter
+  instead of QtCharts.
 
-## Структура проекта
+## Project structure
 
 ```
 process-monitor/
-├── main.py                    точка входа
-├── selfcheck.py               самопроверка ядра
-├── build.bat                  сборка EXE
-├── PulseMonitor.spec          конфигурация PyInstaller
-├── requirements.txt           рантайм-зависимости
-├── requirements-dev.txt       зависимости для сборки
-├── assets/pulse.ico           иконка приложения
-├── packaging/version_info.txt ресурсы версии EXE
-├── tools/make_icon.py         генератор иконки
-├── .github/workflows/build.yml CI-сборка артефакта
+├── main.py                    entry point
+├── selfcheck.py               core self-check
+├── build.bat                  EXE build
+├── PulseMonitor.spec          PyInstaller configuration
+├── requirements.txt           runtime dependencies
+├── requirements-dev.txt       build dependencies
+├── assets/pulse.ico           application icon
+├── packaging/version_info.txt EXE version resources
+├── tools/make_icon.py         icon generator
+├── .github/workflows/build.yml CI artifact build
 ├── install.bat / run.bat / run-console.bat
 ├── core/
-│   ├── sysinfo.py             быстрый снимок процессов (WinAPI)
+│   ├── app_identity.py        AUMID + Start menu shortcut (taskbar icon)
+│   ├── single_instance.py     one running instance, show window on relaunch
+│   ├── sysinfo.py             fast process snapshot (WinAPI)
 │   ├── process_collector.py
 │   ├── net_collector.py
 │   ├── autorun_manager.py
 │   ├── system_stats.py
-│   ├── winapi.py              окна, сессии, версии файлов, автозапуск
+│   ├── winapi.py              windows, sessions, file versions, autostart
+│   ├── i18n.py                localization runtime
+│   ├── translations_en.py     English dictionary
 │   ├── config_manager.py
-│   └── workers.py             фоновые потоки опроса
+│   └── workers.py             background polling threads
 ├── ui/
-│   ├── main_window.py         окно, трей, навигация
-│   ├── theme.py               тёмная/светлая темы
-│   └── widgets/               обзор, процессы, сеть, автозагрузка, настройки
-└── config/                    создаётся автоматически (не коммитится)
+│   ├── main_window.py         window, tray, navigation
+│   ├── theme.py               dark/light themes
+│   └── widgets/               overview, processes, network, startup, settings
+└── config/                    created automatically (not committed)
 ```
 
-## Ограничения
+## Limitations
 
-- Только Windows: используются WinAPI (`NtQuerySystemInformation`, `EnumWindows`,
-  реестр, `sc`).
-- Закрыть отдельное TCP-соединение без драйвера/фильтра нельзя — можно завершить
-  процесс, которому оно принадлежит.
-- Изменение служб (`sc config`) и системных ключей реестра требует прав
-  администратора.
-- Изменение автозагрузки служб вступает в силу после перезагрузки.
-- Определение «подозрительных» процессов — эвристика, а не антивирус.
-- Структура `SYSTEM_PROCESS_INFORMATION` рассчитана на x64 Windows 10/11; при
-  несовместимости приложение автоматически переключается на psutil.
+- Windows only: WinAPI is used (`NtQuerySystemInformation`, `EnumWindows`,
+  registry, `sc`).
+- Closing an individual TCP connection without a driver/filter is impossible —
+  you can terminate the owning process instead.
+- Changing services (`sc config`) and system registry keys requires
+  administrator rights.
+- Service startup changes take effect after a reboot.
+- “Suspicious” detection is a heuristic, not an antivirus.
+- The `SYSTEM_PROCESS_INFORMATION` layout targets x64 Windows 10/11; on
+  incompatibility the app automatically switches to psutil.
 
-## Идеи для развития
+## Roadmap
 
-- Датчики температуры и SMART (нужны права/драйверы).
-- История метрик в SQLite и отчёты.
-- Уведомления при превышении порогов CPU/RAM.
-- Плагины и пользовательские профили отображения.
+- Temperature and SMART sensors (require drivers/rights).
+- Metric history in SQLite and reports.
+- Notifications when CPU/RAM thresholds are exceeded.
+- Plugins and custom display profiles.
+- More UI languages — the dictionary is easy to extend
+  (`core/translations_en.py`).
 
-## Публикация на GitHub
+## Publishing to GitHub
 
-Репозиторий уже подготовлен: `.gitignore` исключает настройки, логи, сборки и
-кэш, в коде нет личных путей и секретов.
+The repository is prepared: `.gitignore` excludes settings, logs, builds and
+caches; the source contains no personal paths or secrets.
 
 ```bat
 git add .
@@ -240,15 +275,15 @@ git remote add origin https://github.com/<your-account>/pulse-monitor.git
 git push -u origin main
 ```
 
-Если репозиторий ещё не инициализирован, выполните `git init` перед первым
-коммитом.
+Run `git init` first if the repository is not initialized yet.
 
-После пуша GitHub Actions (`.github/workflows/build.yml`) соберёт EXE и
-приложит его к запуску как артефакт `PulseMonitor-windows`. Для релиза:
-создайте тег `v1.0.0` и прикрепите `dist\PulseMonitor.exe` к GitHub Release.
+After pushing, GitHub Actions (`.github/workflows/build.yml`) builds the EXE
+and attaches it to the run as the `PulseMonitor-windows` artifact. For a
+release, create a `v1.0.0` tag and attach `dist\PulseMonitor.exe` to the GitHub
+Release.
 
-## Лицензия
+## License
 
-MIT — см. [LICENSE](LICENSE). Проект использует PyQt6 (GPLv3 / коммерческая
-лицензия Riverbank) и psutil (BSD-3-Clause); при распространении EXE
-учитывайте условия лицензий зависимостей.
+MIT — see [LICENSE](LICENSE). The project uses PyQt6 (GPLv3 / commercial
+license from Riverbank) and psutil (BSD-3-Clause); when distributing the EXE,
+comply with the dependency licenses.

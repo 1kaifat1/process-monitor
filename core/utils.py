@@ -11,6 +11,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from .i18n import tr
+
 
 # ---------------------------------------------------------------------------
 # Форматирование значений
@@ -33,12 +35,12 @@ def format_bytes(value, per_second: bool = False) -> str:
         number /= 1024.0
         index += 1
     if index == 0:
-        text = f"{number:.0f} {_BYTE_UNITS[index]}"
+        text = f"{number:.0f} {tr(_BYTE_UNITS[index])}"
     elif number >= 100:
-        text = f"{number:.0f} {_BYTE_UNITS[index]}"
+        text = f"{number:.0f} {tr(_BYTE_UNITS[index])}"
     else:
-        text = f"{number:.1f} {_BYTE_UNITS[index]}"
-    return text + ("/с" if per_second else "")
+        text = f"{number:.1f} {tr(_BYTE_UNITS[index])}"
+    return text + (tr("/с") if per_second else "")
 
 
 def format_percent(value) -> str:
@@ -60,7 +62,7 @@ def format_duration(seconds) -> str:
     hours, rest = divmod(rest, 3600)
     minutes, secs = divmod(rest, 60)
     if days:
-        return f"{days}д {hours:02d}:{minutes:02d}:{secs:02d}"
+        return f"{days}{tr('д')} {hours:02d}:{minutes:02d}:{secs:02d}"
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
@@ -89,18 +91,25 @@ def is_admin() -> bool:
         return False
 
 
+REPLACE_INSTANCE_FLAG = "--replace-instance"
+
+
 def relaunch_as_admin() -> bool:
     """Перезапуск приложения с UAC-повышением прав.
 
     В собранном EXE ``sys.executable`` уже указывает на PulseMonitor.exe,
     поэтому аргументы не нужны; в исходниках передаём путь к main.py.
+    Флаг ``--replace-instance`` говорит новому процессу, что он заменяет
+    текущий экземпляр (иначе сработала бы защита от второго запуска).
     """
     try:
         executable = sys.executable
         if getattr(sys, "frozen", False):
-            params = ""
+            params = REPLACE_INSTANCE_FLAG
         else:
-            params = " ".join(f'"{arg}"' for arg in sys.argv)
+            args = [arg for arg in sys.argv if arg != REPLACE_INSTANCE_FLAG]
+            params = " ".join(f'"{arg}"' for arg in args)
+            params = f"{params} {REPLACE_INSTANCE_FLAG}".strip()
         result = ctypes.windll.shell32.ShellExecuteW(
             None, "runas", executable, params, str(Path.cwd()), 1
         )
@@ -152,9 +161,9 @@ def run_hidden(args: list[str], timeout: float = 10.0) -> tuple[int, str, str]:
         err = completed.stderr.decode(encoding, errors="replace")
         return completed.returncode, out, err
     except FileNotFoundError:
-        return 1, "", "Утилита не найдена"
+        return 1, "", tr("Утилита не найдена")
     except subprocess.TimeoutExpired:
-        return 1, "", "Превышено время ожидания"
+        return 1, "", tr("Превышено время ожидания")
     except Exception as exc:  # pragma: no cover - редкие системные ошибки
         return 1, "", str(exc)
 

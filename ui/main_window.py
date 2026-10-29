@@ -23,12 +23,13 @@ from PyQt6.QtWidgets import (
 
 from core.autorun_manager import AutorunManager
 from core.config_manager import config
+from core.i18n import apply_config_language, tr
 from core.net_collector import NetworkCollector
 from core.process_collector import ProcessCollector
 from core.system_stats import collect_system_stats
 from core.utils import is_admin, relaunch_as_admin
 from core.workers import CollectorThread, stop_all
-from ui.theme import apply_theme, create_app_icon
+from ui.theme import apply_theme, load_app_icon
 from ui.widgets.autorun_view import AutorunView
 from ui.widgets.dashboard_view import DashboardView
 from ui.widgets.network_view import NetworkView
@@ -46,11 +47,13 @@ APP_TITLE = "Pulse Monitor"
 
 
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, honor_start_minimized: bool = True) -> None:
         super().__init__()
-        self.setWindowTitle(f"{APP_TITLE} — мониторинг системы")
-        self.setWindowIcon(create_app_icon(64))
+        apply_config_language()
+        self.setWindowTitle(tr("Pulse Monitor — мониторинг системы"))
+        self.setWindowIcon(load_app_icon(64))
         self.setMinimumSize(1080, 680)
+        self._honor_start_minimized = honor_start_minimized
 
         self.process_collector = ProcessCollector()
         self.network_collector = NetworkCollector()
@@ -70,7 +73,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(450, self.network_view.refresh_now)
         QTimer.singleShot(0, self._on_page_changed)
 
-        if config.get("behavior.start_minimized", False):
+        if honor_start_minimized and config.get("behavior.start_minimized", False):
             QTimer.singleShot(600, self._hide_to_tray)
 
     # ------------------------------------------------------------------
@@ -116,7 +119,7 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
         self.setStatusBar(QStatusBar())
-        self._status_label = QLabel("Готово")
+        self._status_label = QLabel(tr("Готово"))
         self._status_label.setObjectName("Muted")
         self.statusBar().addWidget(self._status_label, 1)
         self.version_label = QLabel("v1.0 · psutil")
@@ -133,7 +136,7 @@ class MainWindow(QMainWindow):
 
         logo = QLabel("PULSE")
         logo.setObjectName("Logo")
-        sub = QLabel("MONITOR · все процессы")
+        sub = QLabel(tr("MONITOR · все процессы"))
         sub.setObjectName("LogoSub")
         layout.addWidget(logo)
         layout.addWidget(sub)
@@ -142,13 +145,13 @@ class MainWindow(QMainWindow):
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
         self.nav_buttons: list[QPushButton] = []
-        icons = ["◉  Обзор", "▤  Процессы", "⇅  Сеть", "⏻  Автозагрузка"]
+        icons = ["◉", "▤", "⇅", "⏻"]
         for index, (title, _subtitle) in enumerate(PAGES):
-            button = QPushButton(icons[index])
+            button = QPushButton(f"{icons[index]}  {tr(title)}")
             button.setObjectName("NavButton")
             button.setCheckable(True)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.setToolTip(title)
+            button.setToolTip(tr(title))
             button.clicked.connect(lambda _checked, page=index: self.set_page(page))
             self.nav_group.addButton(button, index)
             self.nav_buttons.append(button)
@@ -162,7 +165,7 @@ class MainWindow(QMainWindow):
         self.theme_button.clicked.connect(self._toggle_theme)
         layout.addWidget(self.theme_button)
 
-        self.settings_button = QPushButton("⚙  Настройки")
+        self.settings_button = QPushButton(f"⚙  {tr('Настройки')}")
         self.settings_button.setObjectName("NavButton")
         self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.settings_button.clicked.connect(self.open_settings)
@@ -173,7 +176,7 @@ class MainWindow(QMainWindow):
         self.admin_label.setObjectName("Muted")
         layout.addWidget(self.admin_label)
 
-        self.elevate_button = QPushButton("Запустить от администратора")
+        self.elevate_button = QPushButton(tr("Запустить от администратора"))
         self.elevate_button.clicked.connect(self._elevate)
         layout.addWidget(self.elevate_button)
         self._update_admin_state()
@@ -194,20 +197,20 @@ class MainWindow(QMainWindow):
 
         texts = QVBoxLayout()
         texts.setSpacing(1)
-        self.header_title = QLabel(PAGES[0][0])
+        self.header_title = QLabel(tr(PAGES[0][0]))
         self.header_title.setObjectName("PageTitle")
-        self.header_subtitle = QLabel(PAGES[0][1])
+        self.header_subtitle = QLabel(tr(PAGES[0][1]))
         self.header_subtitle.setObjectName("PageSubtitle")
         texts.addWidget(self.header_title)
         texts.addWidget(self.header_subtitle)
         layout.addLayout(texts)
         layout.addStretch(1)
 
-        self.refresh_button = QPushButton("Обновить")
+        self.refresh_button = QPushButton(tr("Обновить"))
         self.refresh_button.clicked.connect(self.refresh_current)
         layout.addWidget(self.refresh_button)
 
-        settings_action = QPushButton("Настройки")
+        settings_action = QPushButton(tr("Настройки"))
         settings_action.setObjectName("PrimaryButton")
         settings_action.clicked.connect(self.open_settings)
         layout.addWidget(settings_action)
@@ -221,20 +224,20 @@ class MainWindow(QMainWindow):
         if not QSystemTrayIcon.isSystemTrayAvailable():
             return
         tray = QSystemTrayIcon(self.windowIcon(), self)
-        tray.setToolTip(f"{APP_TITLE} — мониторинг системы")
+        tray.setToolTip(tr("Pulse Monitor — мониторинг системы"))
         menu = QMenu()
-        show_action = menu.addAction("Показать окно")
+        show_action = menu.addAction(tr("Показать окно"))
         show_action.triggered.connect(self._show_window)
         menu.addSeparator()
         for index, (title, _subtitle) in enumerate(PAGES):
-            action = menu.addAction(title)
+            action = menu.addAction(tr(title))
             action.triggered.connect(
                 lambda _checked=False, page=index: self._show_page(page)
             )
         menu.addSeparator()
-        settings_action = menu.addAction("Настройки…")
+        settings_action = menu.addAction(tr("Настройки…"))
         settings_action.triggered.connect(self.open_settings)
-        quit_action = menu.addAction("Выход")
+        quit_action = menu.addAction(tr("Выход"))
         quit_action.triggered.connect(self.quit_app)
         tray.setContextMenu(menu)
         tray.activated.connect(self._on_tray_activated)
@@ -256,8 +259,10 @@ class MainWindow(QMainWindow):
         if not self._tray_message_shown:
             self.tray.showMessage(
                 APP_TITLE,
-                "Приложение продолжает работать в фоне. "
-                "Двойной клик по иконке — открыть.",
+                tr(
+                    "Приложение продолжает работать в фоне. "
+                    "Двойной клик по иконке — открыть."
+                ),
                 QSystemTrayIcon.MessageIcon.Information,
                 4000,
             )
@@ -267,6 +272,10 @@ class MainWindow(QMainWindow):
         self.showNormal()
         self.raise_()
         self.activateWindow()
+
+    def present(self) -> None:
+        """Показать окно (из трея или по запросу второго экземпляра)."""
+        self._show_window()
 
     def _show_page(self, index: int) -> None:
         self._show_window()
@@ -316,9 +325,14 @@ class MainWindow(QMainWindow):
         self.dashboard_view.set_process_snapshot(payload)
         stats = payload.get("stats", {})
         self._status_label.setText(
-            f"Процессов: {stats.get('total', 0)} · скрытых: {stats.get('hidden', 0)} · "
-            f"подозрительных: {stats.get('suspicious', 0)} · "
-            f"опрос: {stats.get('elapsed_ms', 0):.0f} мс"
+            tr(
+                "Процессов: {total} · скрытых: {hidden} · "
+                "подозрительных: {suspicious} · опрос: {ms:.0f} мс",
+                total=stats.get("total", 0),
+                hidden=stats.get("hidden", 0),
+                suspicious=stats.get("suspicious", 0),
+                ms=stats.get("elapsed_ms", 0),
+            )
         )
 
     def _on_network(self, payload: dict) -> None:
@@ -326,7 +340,7 @@ class MainWindow(QMainWindow):
         self.dashboard_view.set_network_snapshot(payload)
 
     def _on_worker_error(self, message: str) -> None:
-        self._show_status(f"Ошибка мониторинга — {message}")
+        self._show_status(tr("Ошибка мониторинга — {message}", message=message))
 
     def _show_status(self, message: str) -> None:
         self.statusBar().showMessage(message, 6000)
@@ -341,8 +355,8 @@ class MainWindow(QMainWindow):
         for button_index, button in enumerate(self.nav_buttons):
             button.setChecked(button_index == index)
         title, subtitle = PAGES[index]
-        self.header_title.setText(title)
-        self.header_subtitle.setText(subtitle)
+        self.header_title.setText(tr(title))
+        self.header_subtitle.setText(tr(subtitle))
         self._on_page_changed()
 
     def _on_page_changed(self) -> None:
@@ -380,6 +394,10 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(self)
         if not dialog.exec():
             return
+        if dialog.language_changed:
+            apply_config_language()
+            self._recreate_window()
+            return
         self._apply_theme()
         self._update_theme_button()
         accent = str(config.get("accent", "#00f0ff"))
@@ -387,7 +405,26 @@ class MainWindow(QMainWindow):
         self.network_view.apply_settings(accent)
         self.process_view.apply_settings()
         self._update_admin_state()
-        self._show_status("Настройки сохранены")
+        self._show_status(tr("Настройки сохранены"))
+
+    def _recreate_window(self) -> None:
+        """Пересоздать окно после смены языка, сохранив страницу и геометрию."""
+        app = QApplication.instance()
+        self._save_geometry()
+        stop_all(self._threads)
+        self._threads.clear()
+        if self.tray is not None:
+            self.tray.hide()
+        page = self._current_page
+        replacement = MainWindow(honor_start_minimized=False)
+        replacement.set_page(page)
+        replacement.show()
+        replacement.raise_()
+        replacement.activateWindow()
+        if app is not None:
+            app._pulse_window = replacement  # type: ignore[attr-defined]
+        self.hide()
+        self.deleteLater()
 
     def _apply_theme(self) -> None:
         apply_theme(
@@ -409,16 +446,16 @@ class MainWindow(QMainWindow):
     def _update_theme_button(self) -> None:
         theme = str(config.get("theme", "dark"))
         self.theme_button.setText(
-            "☀  Светлая тема" if theme == "dark" else "☾  Тёмная тема"
+            f"☀  {tr('Светлая тема')}" if theme == "dark" else f"☾  {tr('Тёмная тема')}"
         )
 
     def _update_admin_state(self) -> None:
         if is_admin():
-            self.admin_label.setText("✓ Права администратора")
+            self.admin_label.setText(f"✓ {tr('Права администратора')}")
             self.elevate_button.hide()
         else:
             self.admin_label.setText(
-                "Ограниченный доступ: часть системных данных и путей скрыта"
+                tr("Ограниченный доступ: часть системных данных и путей скрыта")
             )
             self.elevate_button.show()
 
@@ -428,7 +465,9 @@ class MainWindow(QMainWindow):
             QApplication.quit()
         else:
             QMessageBox.warning(
-                self, "Права администратора", "Не удалось перезапустить приложение."
+                self,
+                tr("Права администратора"),
+                tr("Не удалось перезапустить приложение."),
             )
 
     # ------------------------------------------------------------------

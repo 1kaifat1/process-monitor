@@ -6,7 +6,9 @@ import sys
 import time
 
 from core.autorun_manager import AutorunManager
+from core.app_identity import APP_USER_MODEL_ID, icon_path, start_menu_shortcut_path
 from core.config_manager import config
+from core.i18n import active_language, apply_config_language, tr
 from core.net_collector import NetworkCollector
 from core.process_collector import ProcessCollector
 from core.system_stats import collect_system_stats, system_info
@@ -22,6 +24,7 @@ def check(label: str, condition: bool, detail: str = "") -> None:
 
 
 def main() -> int:
+    apply_config_language()
     print("Pulse Monitor self-check")
     print("-" * 60)
 
@@ -88,6 +91,26 @@ def main() -> int:
     check("Системные метрики", 0 <= stats_system["cpu"] <= 100)
     check("Информация о системе", bool(system_info()["hostname"]))
     check("Конфигурация загружается", config.get("theme") in ("dark", "light"))
+    check(
+        "Локализация работает",
+        active_language() in ("ru", "en")
+        and tr("Процессы") in ("Процессы", "Processes"),
+        f"{active_language()} · «{tr('Процессы')}»",
+    )
+
+    icon_file = icon_path()
+    check(
+        "Иконка assets/pulse.ico на месте",
+        icon_file is not None
+        and icon_file.read_bytes()[:4] == b"\x00\x00\x01\x00",
+        str(icon_file),
+    )
+    check("AUMID для панели задач", bool(APP_USER_MODEL_ID), APP_USER_MODEL_ID)
+    check(
+        "Каталог меню «Пуск» доступен",
+        start_menu_shortcut_path().parent.is_dir(),
+        str(start_menu_shortcut_path()),
+    )
 
     print("-" * 60)
     if FAILURES:

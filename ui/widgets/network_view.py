@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config_manager import config
+from core.i18n import tr
 from core.utils import export_csv
 
 HEADERS = [
@@ -74,7 +75,7 @@ class ConnectionsModel(QAbstractTableModel):
     def headerData(self, section: int, orientation, role=Qt.ItemDataRole.DisplayRole):  # noqa: N802
         if role == Qt.ItemDataRole.DisplayRole and orientation == Qt.Orientation.Horizontal:
             if 0 <= section < len(HEADERS):
-                return HEADERS[section][1]
+                return tr(HEADERS[section][1])
         return None
 
     def set_rows(self, rows: list[dict]) -> None:
@@ -116,10 +117,14 @@ class NetworkView(QWidget):
 
         cards = QHBoxLayout()
         cards.setSpacing(10)
-        self.down_card = StatCard("Приём", "—", "ожидание", accent="#00f0ff")
-        self.up_card = StatCard("Отдача", "—", "ожидание", accent="#7c5cff")
-        self.connections_card = StatCard("Соединений", "—", "из них установлено: 0")
-        self.processes_card = StatCard("Процессов в сети", "—", "слушающих портов: 0")
+        self.down_card = StatCard(tr("Приём"), "—", tr("ожидание"), accent="#00f0ff")
+        self.up_card = StatCard(tr("Отдача"), "—", tr("ожидание"), accent="#7c5cff")
+        self.connections_card = StatCard(
+            tr("Соединений"), "—", tr("из них установлено: 0")
+        )
+        self.processes_card = StatCard(
+            tr("Процессов в сети"), "—", tr("слушающих портов: 0")
+        )
         for card in (self.down_card, self.up_card, self.connections_card, self.processes_card):
             cards.addWidget(card, 1)
         root.addLayout(cards)
@@ -127,22 +132,33 @@ class NetworkView(QWidget):
         charts = QHBoxLayout()
         charts.setSpacing(10)
         self.down_chart = HistoryChart(
-            "Входящий трафик", "#00f0ff", lambda value: f"{value:,.0f} Б/с".replace(",", " ")
+            tr("Входящий трафик"),
+            "#00f0ff",
+            lambda value: f"{value:,.0f} {tr('Б')}{tr('/с')}".replace(",", " "),
         )
         self.up_chart = HistoryChart(
-            "Исходящий трафик", "#7c5cff", lambda value: f"{value:,.0f} Б/с".replace(",", " ")
+            tr("Исходящий трафик"),
+            "#7c5cff",
+            lambda value: f"{value:,.0f} {tr('Б')}{tr('/с')}".replace(",", " "),
         )
         charts.addWidget(self.down_chart, 1)
         charts.addWidget(self.up_chart, 1)
         root.addLayout(charts)
 
-        interfaces_title = QLabel("Сетевые интерфейсы")
+        interfaces_title = QLabel(tr("Сетевые интерфейсы"))
         interfaces_title.setObjectName("SectionTitle")
         root.addWidget(interfaces_title)
 
         self.interfaces_table = QTableWidget(0, 6)
         self.interfaces_table.setHorizontalHeaderLabels(
-            ["Интерфейс", "IP-адрес", "Статус", "Скорость", "Приём", "Отдача"]
+            [
+                tr("Интерфейс"),
+                tr("IP-адрес"),
+                tr("Статус"),
+                tr("Скорость"),
+                tr("Приём"),
+                tr("Отдача"),
+            ]
         )
         self.interfaces_table.verticalHeader().setVisible(False)
         self.interfaces_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -154,23 +170,27 @@ class NetworkView(QWidget):
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         root.addWidget(self.interfaces_table)
 
-        connections_title = QLabel("Активные соединения")
+        connections_title = QLabel(tr("Активные соединения"))
         connections_title.setObjectName("SectionTitle")
         root.addWidget(connections_title)
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Поиск: процесс, PID, адрес, порт…")
+        self.search.setPlaceholderText(
+            tr("Поиск: процесс, PID, адрес, порт…")
+        )
         self.search.setClearButtonEnabled(True)
-        self.established_check = QCheckBox("Только установленные")
-        self.established_check.setChecked(bool(config.get("network.only_established", False)))
-        self.loopback_check = QCheckBox("Скрыть локальные")
+        self.established_check = QCheckBox(tr("Только установленные"))
+        self.established_check.setChecked(
+            bool(config.get("network.only_established", False))
+        )
+        self.loopback_check = QCheckBox(tr("Скрыть локальные"))
         self.loopback_check.setChecked(bool(config.get("network.hide_loopback", True)))
-        self.refresh_button = QPushButton("Обновить")
-        self.kill_button = QPushButton("Завершить процесс")
+        self.refresh_button = QPushButton(tr("Обновить"))
+        self.kill_button = QPushButton(tr("Завершить процесс"))
         self.kill_button.setObjectName("DangerButton")
-        self.copy_button = QPushButton("Копировать")
+        self.copy_button = QPushButton(tr("Копировать"))
         self.export_button = QPushButton("CSV…")
 
         toolbar.addWidget(self.search, 2)
@@ -203,7 +223,7 @@ class NetworkView(QWidget):
         root.addWidget(self.table, 1)
 
         footer = QHBoxLayout()
-        self.stats_label = QLabel("Ожидание данных…")
+        self.stats_label = QLabel(tr("Ожидание данных…"))
         self.stats_label.setObjectName("Muted")
         self.sampling_label = QLabel("")
         self.sampling_label.setObjectName("Muted")
@@ -233,7 +253,7 @@ class NetworkView(QWidget):
         try:
             payload = self.collector.snapshot()
         except Exception as exc:
-            self.status_message.emit(f"Ошибка опроса сети: {exc}")
+            self.status_message.emit(tr("Ошибка опроса сети: {error}", error=exc))
             return
         self.set_snapshot(payload)
 
@@ -241,18 +261,20 @@ class NetworkView(QWidget):
         self._latest_payload = payload
         stats = payload.get("stats", {})
         self.down_card.set_value(
-            stats.get("down_text", "—"), f"всего принято {stats.get('total_recv', '—')}"
+            stats.get("down_text", "—"),
+            tr("всего принято {value}", value=stats.get("total_recv", "—")),
         )
         self.up_card.set_value(
-            stats.get("up_text", "—"), f"всего отправлено {stats.get('total_sent', '—')}"
+            stats.get("up_text", "—"),
+            tr("всего отправлено {value}", value=stats.get("total_sent", "—")),
         )
         self.connections_card.set_value(
             str(stats.get("count", 0)),
-            f"установлено: {stats.get('established', 0)}",
+            tr("установлено: {count}", count=stats.get("established", 0)),
         )
         self.processes_card.set_value(
             str(stats.get("processes", 0)),
-            f"слушающих портов: {stats.get('listening', 0)}",
+            tr("слушающих портов: {count}", count=stats.get("listening", 0)),
         )
         self.down_chart.push(float(stats.get("down_rate", 0) or 0))
         self.up_chart.push(float(stats.get("up_rate", 0) or 0))
@@ -261,7 +283,9 @@ class NetworkView(QWidget):
         self._all_rows = payload.get("connections", [])
         if self._active or self.model.rowCount() == 0:
             self._apply_filter()
-        self.sampling_label.setText(f"обновлено: {len(self._all_rows)} соединений")
+        self.sampling_label.setText(
+            tr("обновлено: {count} соединений", count=len(self._all_rows))
+        )
 
     def _update_interfaces(self, interfaces: list[dict]) -> None:
         self.interfaces_table.setRowCount(len(interfaces))
@@ -269,7 +293,7 @@ class NetworkView(QWidget):
             values = [
                 item.get("name", "—"),
                 item.get("ip", "—"),
-                "Подключён" if item.get("up") else "Отключён",
+                tr("Подключён") if item.get("up") else tr("Отключён"),
                 item.get("speed", "—"),
                 item.get("down", "—"),
                 item.get("up_rate", "—"),
@@ -307,7 +331,11 @@ class NetworkView(QWidget):
             rows.append(row)
         self.model.set_rows(rows)
         error = (self._latest_payload.get("stats", {}) or {}).get("error", "")
-        text = f"Показано {len(rows)} из {len(self._all_rows)} соединений"
+        text = tr(
+            "Показано {shown} из {total} соединений",
+            shown=len(rows),
+            total=len(self._all_rows),
+        )
         if error:
             text += f" · {error}"
         self.stats_label.setText(text)
@@ -329,17 +357,17 @@ class NetworkView(QWidget):
     def kill_process(self) -> None:
         rows = self.selected_rows()
         if not rows:
-            self.status_message.emit("Выберите соединение в таблице")
+            self.status_message.emit(tr("Выберите соединение в таблице"))
             return
         pids = sorted({int(row["pid"]) for row in rows if row.get("pid")})
         if not pids:
-            self.status_message.emit("У выбранных соединений нет PID")
+            self.status_message.emit(tr("У выбранных соединений нет PID"))
             return
         names = ", ".join(f"{row['process']} ({row['pid']})" for row in rows[:5])
         answer = QMessageBox.question(
             self,
-            "Завершение процесса",
-            f"Завершить процесс(ы): {names}?",
+            tr("Завершение процесса"),
+            tr("Завершить процесс(ы): {names}?", names=names),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -354,14 +382,16 @@ class NetworkView(QWidget):
 
                 try:
                     psutil.Process(pid).terminate()
-                    ok, message = True, "Завершён"
+                    ok, message = True, tr("Завершён")
                 except Exception as exc:
                     ok, message = False, str(exc)
             if not ok:
                 errors.append(f"PID {pid}: {message}")
         self.refresh_now()
         if errors:
-            QMessageBox.warning(self, "Результат", "\n".join(errors[:10]))
+            QMessageBox.warning(
+                self, tr("Результат"), "\n".join(errors[:10])
+            )
 
     def copy_endpoint(self) -> None:
         rows = self.selected_rows()
@@ -372,24 +402,30 @@ class NetworkView(QWidget):
             for row in rows
         )
         QGuiApplication.clipboard().setText(text)
-        self.status_message.emit(f"Скопировано строк: {len(rows)}")
+        self.status_message.emit(tr("Скопировано строк: {count}", count=len(rows)))
 
     def export_csv_dialog(self) -> None:
         rows = self.selected_rows() or self.model.rows()
         if not rows:
-            QMessageBox.information(self, "Экспорт", "Нет соединений для экспорта")
+            QMessageBox.information(
+                self, tr("Экспорт"), tr("Нет соединений для экспорта")
+            )
             return
         path, _filter = QFileDialog.getSaveFileName(
-            self, "Экспорт соединений", "connections.csv", "CSV (*.csv)"
+            self, tr("Экспорт соединений"), "connections.csv", "CSV (*.csv)"
         )
         if not path:
             return
-        headers = [title for _key, title in HEADERS]
+        headers = [tr(title) for _key, title in HEADERS]
         data = [[str(row.get(key, "")) for key, _title in HEADERS] for row in rows]
         if export_csv(path, headers, data):
-            self.status_message.emit(f"Экспортировано соединений: {len(rows)}")
+            self.status_message.emit(
+                tr("Экспортировано соединений: {count}", count=len(rows))
+            )
         else:
-            QMessageBox.warning(self, "Экспорт", "Не удалось сохранить файл")
+            QMessageBox.warning(
+                self, tr("Экспорт"), tr("Не удалось сохранить файл")
+            )
 
     def apply_settings(self, accent: str = "#00f0ff") -> None:
         self.down_chart.set_color(accent)

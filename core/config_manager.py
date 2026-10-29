@@ -57,6 +57,7 @@ PROCESS_COLUMNS = [
 ]
 
 DEFAULTS: dict[str, Any] = {
+    "language": "ru",
     "theme": "dark",
     "accent": "#00f0ff",
     "font_size": 13,

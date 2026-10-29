@@ -417,3 +417,31 @@ def create_app_icon(size: int = 64):
     painter.end()
     return QIcon(pixmap)
 
+
+def app_icon_path():
+    """Путь к ``assets/pulse.ico`` (в onefile-сборке — к распакованному файлу)."""
+    from pathlib import Path
+
+    candidate = Path(__file__).resolve().parents[1] / "assets" / "pulse.ico"
+    return candidate if candidate.is_file() else None
+
+
+def load_app_icon(size: int = 64):
+    """Иконка приложения для окна, трея и панели задач.
+
+    Предпочитает готовый ``assets/pulse.ico``: в нём есть кадры 16–256 px,
+    поэтому панель задач, Alt+Tab и заголовок окна получают чёткую иконку
+    нужного размера. Если файла нет, иконка рисуется программно.
+    """
+    from PyQt6.QtCore import QSize
+    from PyQt6.QtGui import QIcon
+
+    path = app_icon_path()
+    if path is not None:
+        icon = QIcon()
+        for px in (16, 20, 24, 32, 40, 48, 64, 96, 128, 256):
+            icon.addFile(str(path), QSize(px, px))
+        if not icon.isNull():
+            return icon
+    return create_app_icon(size)
+

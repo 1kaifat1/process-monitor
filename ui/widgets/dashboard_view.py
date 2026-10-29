@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.i18n import tr
 from core.system_stats import system_info
 
 TOP_LIMIT = 6
@@ -46,12 +47,12 @@ class DashboardView(QWidget):
         cards = QGridLayout()
         cards.setHorizontalSpacing(10)
         cards.setVerticalSpacing(10)
-        self.cpu_card = StatCard("Загрузка CPU", "—", "—", accent="#00f0ff")
-        self.ram_card = StatCard("Оперативная память", "—", "—")
-        self.disk_card = StatCard("Системный диск", "—", "—")
-        self.net_card = StatCard("Сеть", "—", "—")
-        self.uptime_card = StatCard("Время работы", "—", "с момента загрузки")
-        self.process_card = StatCard("Процессов", "—", "скрытых: 0")
+        self.cpu_card = StatCard(tr("Загрузка CPU"), "—", "—", accent="#00f0ff")
+        self.ram_card = StatCard(tr("Оперативная память"), "—", "—")
+        self.disk_card = StatCard(tr("Системный диск"), "—", "—")
+        self.net_card = StatCard(tr("Сеть"), "—", "—")
+        self.uptime_card = StatCard(tr("Время работы"), "—", tr("с момента загрузки"))
+        self.process_card = StatCard(tr("Процессов"), "—", tr("скрытых: 0"))
         cards_widgets = [
             self.cpu_card,
             self.ram_card,
@@ -68,11 +69,13 @@ class DashboardView(QWidget):
         charts = QHBoxLayout()
         charts.setSpacing(10)
         self.cpu_chart = HistoryChart("CPU", "#00f0ff", lambda value: f"{value:.0f}%")
-        self.ram_chart = HistoryChart("Память", "#2ee6a8", lambda value: f"{value:.0f}%")
+        self.ram_chart = HistoryChart(
+            tr("Память"), "#2ee6a8", lambda value: f"{value:.0f}%"
+        )
         self.net_chart = HistoryChart(
-            "Сеть (приём)",
+            tr("Сеть (приём)"),
             "#7c5cff",
-            lambda value: f"{value:,.0f} Б/с".replace(",", " "),
+            lambda value: f"{value:,.0f} {tr('Б')}{tr('/с')}".replace(",", " "),
         )
         for chart in (self.cpu_chart, self.ram_chart, self.net_chart):
             charts.addWidget(chart, 1)
@@ -81,8 +84,8 @@ class DashboardView(QWidget):
         bottom = QHBoxLayout()
         bottom.setSpacing(10)
 
-        top_cpu_panel, self.top_cpu_table = self._top_panel("Топ по CPU")
-        top_mem_panel, self.top_mem_table = self._top_panel("Топ по памяти")
+        top_cpu_panel, self.top_cpu_table = self._top_panel(tr("Топ по CPU"))
+        top_mem_panel, self.top_mem_table = self._top_panel(tr("Топ по памяти"))
         bottom.addWidget(top_cpu_panel, 1)
         bottom.addWidget(top_mem_panel, 1)
 
@@ -91,20 +94,20 @@ class DashboardView(QWidget):
         system_layout = QVBoxLayout(system_panel)
         system_layout.setContentsMargins(16, 12, 16, 12)
         system_layout.setSpacing(8)
-        title = QLabel("Система")
+        title = QLabel(tr("Система"))
         title.setObjectName("SectionTitle")
         system_layout.addWidget(title)
         self.system_form = QFormLayout()
         self.system_form.setSpacing(6)
         self.system_labels: dict[str, QLabel] = {}
         fields = [
-            ("hostname", "Компьютер"),
-            ("os", "ОС"),
-            ("cpu", "Процессор"),
-            ("cores", "Ядра"),
-            ("total_ram", "Память"),
-            ("boot_time", "Загрузка"),
-            ("user", "Пользователь"),
+            ("hostname", tr("Компьютер")),
+            ("os", tr("ОС")),
+            ("cpu", tr("Процессор")),
+            ("cores", tr("Ядра")),
+            ("total_ram", tr("Память")),
+            ("boot_time", tr("Время загрузки")),
+            ("user", tr("Пользователь")),
         ]
         for key, caption in fields:
             value = QLabel("—")
@@ -125,7 +128,11 @@ class DashboardView(QWidget):
         self.system_labels["os"].setText(info["os"])
         self.system_labels["cpu"].setText(info["cpu"])
         self.system_labels["cores"].setText(
-            f"{info['physical_cores']} физ. / {info['logical_cores']} лог."
+            tr(
+                "{physical} физ. / {logical} лог.",
+                physical=info["physical_cores"],
+                logical=info["logical_cores"],
+            )
         )
         self.system_labels["total_ram"].setText(info["total_ram"])
         self.system_labels["boot_time"].setText(info["boot_time"])
@@ -133,8 +140,8 @@ class DashboardView(QWidget):
 
         actions = QHBoxLayout()
         actions.addStretch(1)
-        self.details_button = QPushButton("Подробности процесса")
-        self.kill_button = QPushButton("Завершить процесс")
+        self.details_button = QPushButton(tr("Подробности процесса"))
+        self.kill_button = QPushButton(tr("Завершить процесс"))
         self.kill_button.setObjectName("DangerButton")
         actions.addWidget(self.details_button)
         actions.addWidget(self.kill_button)
@@ -153,7 +160,7 @@ class DashboardView(QWidget):
         label.setObjectName("SectionTitle")
         layout.addWidget(label)
         table = QTableWidget(0, 3)
-        table.setHorizontalHeaderLabels(["Процесс", "PID", "Значение"])
+        table.setHorizontalHeaderLabels([tr("Процесс"), tr("PID"), tr("Значение")])
         table.verticalHeader().setVisible(False)
         table.setShowGrid(False)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -179,7 +186,7 @@ class DashboardView(QWidget):
     def set_system_snapshot(self, stats: dict) -> None:
         self.cpu_card.set_value(
             f"{stats.get('cpu', 0):.1f}%",
-            f"своп: {stats.get('swap_percent', 0):.1f}%",
+            tr("своп: {value}", value=f"{stats.get('swap_percent', 0):.1f}%"),
         )
         self.ram_card.set_value(
             f"{stats.get('ram_percent', 0):.1f}%", stats.get("ram_text", "—")
@@ -196,7 +203,7 @@ class DashboardView(QWidget):
         self._network_stats = stats
         self.net_card.set_value(
             f"↓ {stats.get('down_text', '—')}   ↑ {stats.get('up_text', '—')}",
-            f"соединений: {stats.get('count', 0)}",
+            tr("соединений: {count}", count=stats.get("count", 0)),
         )
         self.net_chart.push(float(stats.get("down_rate", 0) or 0))
 
@@ -205,8 +212,11 @@ class DashboardView(QWidget):
         stats = payload.get("stats", {}) or {}
         self.process_card.set_value(
             str(stats.get("total", 0)),
-            f"скрытых: {stats.get('hidden', 0)} · "
-            f"подозрительных: {stats.get('suspicious', 0)}",
+            tr(
+                "скрытых: {hidden} · подозрительных: {suspicious}",
+                hidden=stats.get("hidden", 0),
+                suspicious=stats.get("suspicious", 0),
+            ),
         )
         if self._active:
             self._update_top_tables()
@@ -253,7 +263,7 @@ class DashboardView(QWidget):
     def show_details(self) -> None:
         pid = self._selected_pid()
         if pid is None:
-            self.status_message.emit("Выберите процесс в списке топ-процессов")
+            self.status_message.emit(tr("Выберите процесс в списке топ-процессов"))
             return
         from .process_details import ProcessDetailsDialog
 
@@ -262,15 +272,21 @@ class DashboardView(QWidget):
     def kill_selected(self) -> None:
         pid = self._selected_pid()
         if pid is None:
-            self.status_message.emit("Выберите процесс в списке топ-процессов")
+            self.status_message.emit(tr("Выберите процесс в списке топ-процессов"))
             return
         if pid <= 4:
-            QMessageBox.warning(self, "Завершение", "Системный процесс защищён")
+            QMessageBox.warning(
+                self, tr("Завершение"), tr("Системный процесс защищён")
+            )
             return
         answer = QMessageBox.question(
             self,
-            "Завершение процесса",
-            f"Завершить {self._selected_name(pid)} (PID {pid})?",
+            tr("Завершение процесса"),
+            tr(
+                "Завершить {name} (PID {pid})?",
+                name=self._selected_name(pid),
+                pid=pid,
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -280,7 +296,7 @@ class DashboardView(QWidget):
         if ok:
             self.status_message.emit(message)
         else:
-            QMessageBox.warning(self, "Завершение", message)
+            QMessageBox.warning(self, tr("Завершение"), message)
 
     def apply_settings(self, accent: str = "#00f0ff") -> None:
         self.cpu_chart.set_color(accent)

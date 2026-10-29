@@ -26,22 +26,24 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config_manager import PROCESS_COLUMNS, config
+from core.i18n import LANGUAGE_NAMES, tr
 from core.winapi import autostart_enabled, set_autostart
 
 
 class SettingsDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Настройки Pulse Monitor")
+        self.setWindowTitle(tr("Настройки Pulse Monitor"))
         self.setMinimumSize(680, 580)
         self.resize(720, 620)
         self._accent = str(config.get("accent", "#00f0ff"))
+        self.language_changed = False
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 14, 16, 14)
         root.setSpacing(10)
 
-        title = QLabel("Настройки")
+        title = QLabel(tr("Настройки"))
         title.setObjectName("PageTitle")
         root.addWidget(title)
 
@@ -67,12 +69,18 @@ class SettingsDialog(QDialog):
         form = QFormLayout()
         form.setSpacing(10)
         self.theme_combo = QComboBox()
-        self.theme_combo.addItem("Тёмная", "dark")
-        self.theme_combo.addItem("Светлая", "light")
-        form.addRow("Тема оформления:", self.theme_combo)
+        self.theme_combo.addItem(tr("Тёмная"), "dark")
+        self.theme_combo.addItem(tr("Светлая"), "light")
+        form.addRow(tr("Тема оформления:"), self.theme_combo)
+
+        self.language_combo = QComboBox()
+        self.language_combo.addItem(tr("Системный (авто)"), "auto")
+        self.language_combo.addItem(LANGUAGE_NAMES["ru"], "ru")
+        self.language_combo.addItem(LANGUAGE_NAMES["en"], "en")
+        form.addRow(tr("Язык интерфейса:"), self.language_combo)
 
         accent_row = QHBoxLayout()
-        self.accent_button = QPushButton("Выбрать цвет…")
+        self.accent_button = QPushButton(tr("Выбрать цвет…"))
         self.accent_button.clicked.connect(self._pick_accent)
         self.accent_preview = QLabel()
         self.accent_preview.setFixedSize(54, 26)
@@ -84,24 +92,26 @@ class SettingsDialog(QDialog):
         accent_row.addStretch(1)
         accent_widget = QWidget()
         accent_widget.setLayout(accent_row)
-        form.addRow("Акцентный цвет:", accent_widget)
+        form.addRow(tr("Акцентный цвет:"), accent_widget)
 
         self.font_spin = QSpinBox()
         self.font_spin.setRange(10, 18)
         self.font_spin.setSuffix(" px")
-        form.addRow("Размер шрифта:", self.font_spin)
+        form.addRow(tr("Размер шрифта:"), self.font_spin)
         layout.addLayout(form)
 
         hint = QLabel(
-            "Тема и акцент применяются ко всем элементам: таблицам, графикам, "
-            "кнопкам, меню и боковой панели."
+            tr(
+                "Тема и акцент применяются ко всем элементам: таблицам, графикам, "
+                "кнопкам, меню и боковой панели."
+            )
         )
         hint.setObjectName("Muted")
         hint.setWordWrap(True)
         layout.addWidget(hint)
         layout.addStretch(1)
 
-        self.tabs.addTab(page, "Внешний вид")
+        self.tabs.addTab(page, tr("Внешний вид"))
 
     def _build_intervals_tab(self) -> None:
         page = QWidget()
@@ -114,32 +124,34 @@ class SettingsDialog(QDialog):
         self.interval_processes = QSpinBox()
         self.interval_processes.setRange(300, 20000)
         self.interval_processes.setSingleStep(100)
-        self.interval_processes.setSuffix(" мс")
-        form.addRow("Процессы:", self.interval_processes)
+        self.interval_processes.setSuffix(f" {tr('мс')}")
+        form.addRow(tr("Процессы:"), self.interval_processes)
 
         self.interval_network = QSpinBox()
         self.interval_network.setRange(300, 20000)
         self.interval_network.setSingleStep(100)
-        self.interval_network.setSuffix(" мс")
-        form.addRow("Сеть:", self.interval_network)
+        self.interval_network.setSuffix(f" {tr('мс')}")
+        form.addRow(tr("Сеть:"), self.interval_network)
 
         self.interval_dashboard = QSpinBox()
         self.interval_dashboard.setRange(300, 20000)
         self.interval_dashboard.setSingleStep(100)
-        self.interval_dashboard.setSuffix(" мс")
-        form.addRow("Обзор (графики):", self.interval_dashboard)
+        self.interval_dashboard.setSuffix(f" {tr('мс')}")
+        form.addRow(tr("Обзор (графики):"), self.interval_dashboard)
         layout.addLayout(form)
 
         hint = QLabel(
-            "Чем больше интервал, тем ниже нагрузка. При неактивной вкладке "
-            "опрос автоматически замедляется в 3 раза. Рекомендуемые значения: "
-            "2000 мс для процессов и сети, 1200 мс для обзора."
+            tr(
+                "Чем больше интервал, тем ниже нагрузка. При неактивной вкладке "
+                "опрос автоматически замедляется в 3 раза. Рекомендуемые значения: "
+                "2000 мс для процессов и сети, 1200 мс для обзора."
+            )
         )
         hint.setObjectName("Muted")
         hint.setWordWrap(True)
         layout.addWidget(hint)
         layout.addStretch(1)
-        self.tabs.addTab(page, "Обновление")
+        self.tabs.addTab(page, tr("Обновление"))
 
     def _build_processes_tab(self) -> None:
         page = QWidget()
@@ -147,12 +159,16 @@ class SettingsDialog(QDialog):
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
-        self.show_system_check = QCheckBox("Показывать системные процессы и службы")
-        self.confirm_kill_check = QCheckBox("Спрашивать подтверждение перед завершением")
+        self.show_system_check = QCheckBox(
+            tr("Показывать системные процессы и службы")
+        )
+        self.confirm_kill_check = QCheckBox(
+            tr("Спрашивать подтверждение перед завершением")
+        )
         layout.addWidget(self.show_system_check)
         layout.addWidget(self.confirm_kill_check)
 
-        columns_group = QGroupBox("Отображаемые столбцы")
+        columns_group = QGroupBox(tr("Отображаемые столбцы"))
         group_layout = QVBoxLayout(columns_group)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -164,14 +180,14 @@ class SettingsDialog(QDialog):
         grid.setVerticalSpacing(8)
         self.column_checks: dict[str, QCheckBox] = {}
         for index, (key, title, _width, _default) in enumerate(PROCESS_COLUMNS):
-            checkbox = QCheckBox(title)
+            checkbox = QCheckBox(tr(title))
             self.column_checks[key] = checkbox
             grid.addWidget(checkbox, index // 3, index % 3)
         scroll.setWidget(inner)
         group_layout.addWidget(scroll)
         layout.addWidget(columns_group, 1)
 
-        self.tabs.addTab(page, "Процессы")
+        self.tabs.addTab(page, tr("Процессы"))
 
     def _build_behavior_tab(self) -> None:
         page = QWidget()
@@ -180,13 +196,17 @@ class SettingsDialog(QDialog):
         layout.setSpacing(10)
 
         self.close_to_tray_check = QCheckBox(
-            "Скрывать окно в трей при закрытии (работа в фоне)"
+            tr("Скрывать окно в трей при закрытии (работа в фоне)")
         )
-        self.start_minimized_check = QCheckBox("Запускать свёрнутым в трей")
-        self.autostart_check = QCheckBox("Добавить Pulse Monitor в автозапуск Windows")
-        self.remember_geometry_check = QCheckBox("Запоминать размер и положение окна")
+        self.start_minimized_check = QCheckBox(tr("Запускать свёрнутым в трей"))
+        self.autostart_check = QCheckBox(
+            tr("Добавить Pulse Monitor в автозапуск Windows")
+        )
+        self.remember_geometry_check = QCheckBox(
+            tr("Запоминать размер и положение окна")
+        )
         self.slow_inactive_check = QCheckBox(
-            "Снижать частоту опроса, когда вкладка неактивна"
+            tr("Снижать частоту опроса, когда вкладка неактивна")
         )
         for checkbox in (
             self.close_to_tray_check,
@@ -198,23 +218,25 @@ class SettingsDialog(QDialog):
             layout.addWidget(checkbox)
 
         hint = QLabel(
-            "Фоновый режим использует те же потоки опроса. Без прав администратора "
-            "часть системных данных и путей процессов будет недоступна."
+            tr(
+                "Фоновый режим использует те же потоки опроса. Без прав администратора "
+                "часть системных данных и путей процессов будет недоступна."
+            )
         )
         hint.setObjectName("Muted")
         hint.setWordWrap(True)
         layout.addWidget(hint)
         layout.addStretch(1)
-        self.tabs.addTab(page, "Поведение")
+        self.tabs.addTab(page, tr("Поведение"))
 
     def _build_buttons(self, root: QVBoxLayout) -> None:
         row = QHBoxLayout()
         row.setSpacing(8)
-        self.reset_button = QPushButton("Сбросить всё")
-        self.export_button = QPushButton("Экспорт…")
-        self.import_button = QPushButton("Импорт…")
-        self.cancel_button = QPushButton("Отмена")
-        self.save_button = QPushButton("Сохранить")
+        self.reset_button = QPushButton(tr("Сбросить всё"))
+        self.export_button = QPushButton(tr("Экспорт…"))
+        self.import_button = QPushButton(tr("Импорт…"))
+        self.cancel_button = QPushButton(tr("Отмена"))
+        self.save_button = QPushButton(tr("Сохранить"))
         self.save_button.setObjectName("PrimaryButton")
         row.addWidget(self.reset_button)
         row.addWidget(self.export_button)
@@ -241,7 +263,7 @@ class SettingsDialog(QDialog):
         self.accent_label.setText(self._accent)
 
     def _pick_accent(self) -> None:
-        color = QColorDialog.getColor(QColor(self._accent), self, "Акцентный цвет")
+        color = QColorDialog.getColor(QColor(self._accent), self, tr("Акцентный цвет"))
         if color.isValid():
             self._accent = color.name()
             self._update_accent_preview()
@@ -249,6 +271,8 @@ class SettingsDialog(QDialog):
     def _load_from_config(self) -> None:
         theme_index = self.theme_combo.findData(config.get("theme", "dark"))
         self.theme_combo.setCurrentIndex(max(0, theme_index))
+        language_index = self.language_combo.findData(config.get("language", "auto"))
+        self.language_combo.setCurrentIndex(max(0, language_index))
         self._accent = str(config.get("accent", "#00f0ff"))
         self._update_accent_preview()
         self.font_spin.setValue(int(config.get("font_size", 13)))
@@ -281,13 +305,16 @@ class SettingsDialog(QDialog):
         if not any(checkbox.isChecked() for checkbox in self.column_checks.values()):
             QMessageBox.warning(
                 self,
-                "Столбцы",
-                "Должен быть выбран хотя бы один отображаемый столбец.",
+                tr("Столбцы"),
+                tr("Должен быть выбран хотя бы один отображаемый столбец."),
             )
             return
 
         autostart = self.autostart_check.isChecked()
+        previous_language = str(config.get("language", "auto"))
+        new_language = str(self.language_combo.currentData() or "auto")
         values = {
+            "language": new_language,
             "theme": self.theme_combo.currentData() or "dark",
             "accent": self._accent,
             "font_size": self.font_spin.value(),
@@ -313,6 +340,7 @@ class SettingsDialog(QDialog):
             },
         }
         config.update(values)
+        self.language_changed = previous_language != new_language
 
         try:
             from pathlib import Path
@@ -330,9 +358,11 @@ class SettingsDialog(QDialog):
             if not set_autostart(executable, script, autostart):
                 QMessageBox.warning(
                     self,
-                    "Автозапуск",
-                    "Не удалось изменить автозапуск Windows. "
-                    "Проверьте права доступа к реестру.",
+                    tr("Автозапуск"),
+                    tr(
+                        "Не удалось изменить автозапуск Windows. "
+                        "Проверьте права доступа к реестру."
+                    ),
                 )
         except Exception:
             pass
@@ -341,36 +371,55 @@ class SettingsDialog(QDialog):
     def _reset(self) -> None:
         answer = QMessageBox.question(
             self,
-            "Сброс настроек",
-            "Вернуть все настройки к значениям по умолчанию?",
+            tr("Сброс настроек"),
+            tr("Вернуть все настройки к значениям по умолчанию?"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
+        previous_language = str(config.get("language", "auto"))
         config.reset()
+        self.language_changed = previous_language != str(
+            config.get("language", "auto")
+        )
         self._load_from_config()
         self.accept()
 
     def _export(self) -> None:
         path, _filter = QFileDialog.getSaveFileName(
-            self, "Экспорт настроек", "pulse-monitor-settings.json", "JSON (*.json)"
+            self,
+            tr("Экспорт настроек"),
+            "pulse-monitor-settings.json",
+            "JSON (*.json)",
         )
         if path and not config.export_to(path):
-            QMessageBox.warning(self, "Экспорт", "Не удалось сохранить настройки")
+            QMessageBox.warning(
+                self, tr("Экспорт"), tr("Не удалось сохранить настройки")
+            )
 
     def _import(self) -> None:
         path, _filter = QFileDialog.getOpenFileName(
-            self, "Импорт настроек", "", "JSON (*.json)"
+            self, tr("Импорт настроек"), "", "JSON (*.json)"
         )
         if not path:
             return
+        previous_language = str(config.get("language", "auto"))
         if config.import_from(path):
+            self.language_changed = previous_language != str(
+                config.get("language", "auto")
+            )
             self._load_from_config()
             QMessageBox.information(
-                self, "Импорт", "Настройки загружены. Нажмите «Сохранить»."
+                self,
+                tr("Импорт"),
+                tr("Настройки загружены. Нажмите «Сохранить»."),
             )
         else:
-            QMessageBox.warning(self, "Импорт", "Не удалось прочитать файл настроек")
+            QMessageBox.warning(
+                self,
+                tr("Импорт"),
+                tr("Не удалось прочитать файл настроек"),
+            )
 
 
