@@ -10,6 +10,13 @@ if errorlevel 1 (
     exit /b 1
 )
 
+python -m pip install -r requirements-dev.txt
+if errorlevel 1 (
+    echo Не удалось установить зависимости сборки.
+    pause
+    exit /b 1
+)
+
 python -m PyInstaller --version >nul 2>nul
 if errorlevel 1 (
     echo PyInstaller не найден — устанавливаю...

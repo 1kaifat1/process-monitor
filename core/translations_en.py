@@ -643,3 +643,81 @@ EN.update(
         "критический": "critical",
     }
 )
+
+EN.update(
+    {
+        # GPU и очистка памяти
+        "Видеокарта": "GPU",
+        "Температура": "Temperature",
+        "Загрузка GPU": "GPU load",
+        "Контроллер памяти": "Memory controller",
+        "Видеопамять": "VRAM",
+        "МГц": "MHz",
+        "вентилятор": "fan",
+        "МБ": "MB",
+        "Очистить память": "Clean RAM",
+        "Очистка…": "Cleaning…",
+        "Очистка памяти…": "Cleaning memory…",
+        "Очистка памяти": "RAM cleanup",
+        "Очистка завершена: освобождено {mb} МБ": (
+            "Cleanup complete: {mb} MB freed"
+        ),
+        "часть процессов недоступна без прав администратора": (
+            "some processes require administrator rights"
+        ),
+        "Требуются права администратора для глубокой очистки.": (
+            "Administrator rights are required for deep cleanup."
+        ),
+        "Требуются права администратора для глубокой очистки. Перезапустите Pulse Monitor с повышенными правами.": (
+            "Administrator rights are required for deep cleanup. Restart "
+            "Pulse Monitor elevated."
+        ),
+        "Очистка памяти недоступна на этой платформе.": (
+            "RAM cleanup is not available on this platform."
+        ),
+        "Не удалось очистить память: {error}": "Could not clean RAM: {error}",
+    }
+)
+
+EN.update(
+    {
+        # Pulse Monitor 2.0: Очистка и База знаний процессов
+        "Pulse Monitor — мониторинг и очистка системы": "Pulse Monitor — system monitor & cleaner",
+        "МОНИТОРИНГ": "MONITORING",
+        "ОЧИСТКА И ДИСК": "CLEANER & DISK",
+        "Что делает процесс": "What this process does",
+        "Все процессы, что они делают, пути к файлам и управление": (
+            "All processes, what they do, file paths and control"
+        ),
+        "Быстрая очистка": "Quick Cleaner",
+        "Временные файлы, кэши браузеров и видеокарты, Корзина и SSD TRIM": (
+            "Temp files, browser & GPU shader caches, Recycle Bin and SSD TRIM"
+        ),
+        "Точечная очистка": "Precise Cleaner",
+        "Быстрые профили, поиск по фильтрам и разблокировка занятых файлов": (
+            "One-click profiles, custom filter search and locked file unlocker"
+        ),
+        "Диск и дубликаты": "Disk & Duplicates",
+        "Диск (WizTree) и дубликаты": "Disk (WizTree) & Duplicates",
+        "Дерево папок и файлов WizTree, активные процессы в папках, Treemap и дубликаты SHA-1": (
+            "WizTree folder & file tree, active processes in folders, Treemap and SHA-1 duplicates"
+        ),
+        "Интерактивная карта диска (Treemap), топ-100 файлов и поиск дубликатов SHA-1": (
+            "Interactive disk Treemap, top-100 largest files and SHA-1 duplicate finder"
+        ),
+        "Очистить ОЗУ": "Clean RAM",
+        "Что это?": "What is this?",
+        "Папка": "Folder",
+        "Необязательные / телеметрия": "Optional / telemetry",
+        "Видеокарта (GPU):": "GPU:",
+        "⚠️ Показать подозрительные ({count})": "⚠️ Show suspicious ({count})",
+        "⚠️ Подозрительные ({count})": "⚠️ Suspicious ({count})",
+        "✓ Показать все процессы": "✓ Show all processes",
+        "📊 Сканировать WizTree + Процессы": "📊 Scan WizTree + Processes",
+        "🌳 Дерево WizTree + Процессы и Карта": "🌳 WizTree + Processes & Map",
+        "♻️ В Корзину": "♻️ To Recycle Bin",
+        "🧨 Удалить навсегда (с авто-завершением процессов)": (
+            "🧨 Delete permanently (auto-kill folder processes)"
+        ),
+    }
+)

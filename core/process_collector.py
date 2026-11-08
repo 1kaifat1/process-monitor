@@ -1,17 +1,25 @@
-"""Сбор сведений о процессах Windows (включая фоновые и скрытые)."""
+"""Сбор сведений о процессах Windows (включая фоновые, службы и базу знаний «Что делает процесс»)."""
 
 from __future__ import annotations
 
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any
 
 import psutil
 
+from .cleaner_engine import delete_path_forced, is_safe_delete_path
 from .i18n import tr
+from .process_kb import describe_process
 from .utils import format_bytes, format_duration, format_timestamp
-from .winapi import file_version_info, process_sessions, visible_windows
+from .winapi import (
+    file_version_info,
+    process_sessions,
+    query_process_image_path,
+    visible_windows,
+)
 
 _STATUS_LABELS = (
     ("STATUS_RUNNING", "Работает"),
@@ -30,7 +38,6 @@ _STATUS_LABELS = (
     ("STATUS_PARKED", "Припаркован"),
 )
 
-# Часть констант psutil доступна только на отдельных платформах.
 STATUS_RU = {
     getattr(psutil, name): label
     for name, label in _STATUS_LABELS
@@ -40,24 +47,62 @@ STATUS_RU = {
 SYSTEM32 = os.path.normcase(os.environ.get("SystemRoot", r"C:\Windows") + r"\System32")
 WINDIR = os.path.normcase(os.environ.get("SystemRoot", r"C:\Windows"))
 
-TEMP_DIRS = [d for d in (os.environ.get("TEMP"), os.environ.get("TMP"),
-                         os.path.join(WINDIR, "Temp")) if d]
+TEMP_DIRS = [
+    d
+    for d in (
+        os.environ.get("TEMP"),
+        os.environ.get("TMP"),
+        os.path.join(WINDIR, "Temp"),
+    )
+    if d
+]
 
 USER_WRITABLE_DIRS = [
-    d for d in (
+    d
+    for d in (
         os.environ.get("APPDATA"),
         os.environ.get("LOCALAPPDATA"),
         str(Path.home() / "Downloads"),
         str(Path.home() / "Desktop"),
         str(Path.home() / "Documents"),
-    ) if d
+    )
+    if d
 ]
 
 SYSTEM_PROCESS_NAMES = {
-    "svchost.exe", "lsass.exe", "winlogon.exe", "services.exe", "csrss.exe",
-    "smss.exe", "wininit.exe", "spoolsv.exe", "taskhostw.exe", "explorer.exe",
-    "dwm.exe", "fontdrvhost.exe", "sihost.exe", "ctfmon.exe", "audiodg.exe",
+    "svchost.exe",
+    "lsass.exe",
+    "winlogon.exe",
+    "services.exe",
+    "csrss.exe",
+    "smss.exe",
+    "wininit.exe",
+    "spoolsv.exe",
+    "taskhostw.exe",
+    "explorer.exe",
+    "dwm.exe",
+    "fontdrvhost.exe",
+    "sihost.exe",
+    "ctfmon.exe",
+    "audiodg.exe",
 }
+
+KERNEL_PSEUDO_PROCESSES = {
+    "system",
+    "system idle process",
+    "idle",
+    "registry",
+    "memory compression",
+    "memcompression",
+    "secure system",
+    "vmmem",
+    "vmmemwsl",
+    "vmmemcmz",
+}
+
+OWN_PID = os.getpid()
+OWN_PPID = os.getppid()
+MEIPASS_DIR = getattr(sys, "_MEIPASS", "") or ""
 
 PRIORITIES = {
     "Низкий": psutil.IDLE_PRIORITY_CLASS,
@@ -89,7 +134,7 @@ def _is_under(path: str, directories: list[str]) -> bool:
 
 
 class ProcessCollector:
-    """Кэширует объекты Process, чтобы корректно считать CPU и не нагружать ПК."""
+    """Кэширует объекты Process, пути, описания и службы Windows без лишней нагрузки на CPU."""
 
     def __init__(self) -> None:
         self._cache: dict[int, dict[str, Any]] = {}
@@ -104,10 +149,38 @@ class ProcessCollector:
         self._last_time = 0.0
         self._with_handles = False
         self._prev_cpu: dict[int, tuple[float, float]] = {}
+        self._services_by_pid: dict[int, list[str]] = {}
+        self._services_ts = 0.0
+
+    def _refresh_services_map(self) -> None:
+        """Обновляет карту PID -> список запущенных служб Windows раз в 20 секунд."""
+        now = time.monotonic()
+        if self._services_by_pid and (now - self._services_ts) < 20.0:
+            return
+        self._services_ts = now
+        if not hasattr(psutil, "win_service_iter"):
+            return
+        mapping: dict[int, list[str]] = {}
+        try:
+            for svc in psutil.win_service_iter():
+                try:
+                    info = svc.as_dict()
+                    pid = info.get("pid")
+                    if pid and info.get("status") == "running":
+                        disp = info.get("display_name") or info.get("name") or ""
+                        short = info.get("name") or ""
+                        label = f"{short} ({disp})" if disp and disp != short else short
+                        mapping.setdefault(int(pid), []).append(short)
+                except Exception:
+                    continue
+        except Exception:
+            return
+        self._services_by_pid = mapping
 
     def snapshot(self) -> dict[str, Any]:
         """Быстрый снимок через NtQuery с откатом на psutil."""
         started = time.perf_counter()
+        self._refresh_services_map()
         try:
             from .sysinfo import query_processes
 
@@ -131,15 +204,19 @@ class ProcessCollector:
                 not isinstance(entry, dict)
                 or abs(float(entry.get("create_time") or 0.0) - create_time) > 1.0
             ):
+                # Быстрое получение пути через QueryFullProcessImageNameW (работает и для Session 0!)
+                fast_exe = query_process_image_path(pid) if pid > 4 else ""
+                name_val = item.get("name", "")
                 entry = {
                     "pid": pid,
-                    "name": item.get("name", ""),
+                    "name": name_val,
                     "create_time": create_time,
-                    "exe": None,
+                    "exe": fast_exe,
                     "cmdline": None,
                     "user": None,
                     "ps_name": None,
-                    "exe_reasons": None,
+                    "exe_reasons": self._exe_reasons(fast_exe, name_val, pid),
+                    "kb": None,
                 }
                 self._cache[pid] = entry
 
@@ -153,17 +230,19 @@ class ProcessCollector:
             self._prev_cpu[pid] = (cpu_seconds, now)
             entry["_cpu"] = round(min(max(cpu, 0.0), 100.0), 1)
 
-        # Путь, пользователь и командная строка дорогие — добираем порциями,
-        # ограничивая не только количество, но и время на один снимок.
-        budget = 20
+        # Добираем cmdline/user порциями с жёстким бюджетом времени
+        budget = 25
         enrich_started = time.perf_counter()
         for item in items:
-            if budget <= 0 or time.perf_counter() - enrich_started > 0.04:
+            if budget <= 0 or time.perf_counter() - enrich_started > 0.035:
                 break
-            entry = self._cache.get(int(item["pid"]))
-            if entry is None or entry.get("exe") is not None:
+            pid = int(item["pid"])
+            entry = self._cache.get(pid)
+            if entry is None or entry.get("cmdline") is not None:
                 continue
-            if int(item.get("session") or 0) == 0:
+            if pid in (0, 4):
+                entry["cmdline"] = ""
+                entry["user"] = "SYSTEM"
                 continue
             self._enrich_entry(entry, item)
             budget -= 1
@@ -213,7 +292,11 @@ class ProcessCollector:
         pid = int(item["pid"])
         try:
             process = psutil.Process(pid)
-            entry["exe"] = process.exe() or ""
+            if not entry.get("exe"):
+                try:
+                    entry["exe"] = process.exe() or ""
+                except Exception:
+                    pass
             try:
                 entry["cmdline"] = " ".join(process.cmdline())
             except Exception:
@@ -221,37 +304,66 @@ class ProcessCollector:
             try:
                 entry["user"] = process.username() or ""
             except Exception:
-                entry["user"] = ""
+                entry["user"] = "SYSTEM" if int(item.get("session") or 0) == 0 else ""
             try:
                 entry["ps_name"] = process.name() or ""
             except Exception:
                 entry["ps_name"] = ""
         except Exception:
-            entry["exe"] = ""
             entry["cmdline"] = ""
-            entry["user"] = ""
+            entry["user"] = "SYSTEM" if int(item.get("session") or 0) == 0 else ""
         entry["exe_reasons"] = self._exe_reasons(
-            entry.get("exe") or "", entry.get("name") or ""
+            entry.get("exe") or "", entry.get("name") or "", pid
         )
 
     @staticmethod
-    def _exe_reasons(exe: str, name: str) -> list[str]:
+    def _exe_reasons(exe: str, name: str, pid: int = -1) -> list[str]:
         reasons: list[str] = []
+        name_lower = _lower(name)
+        # Никогда не помечаем как подозрительный сам Pulse Monitor, его загрузчик и псевдопроцессы ядра Windows
+        if (
+            pid in (0, 4, OWN_PID, OWN_PPID)
+            or name_lower in KERNEL_PSEUDO_PROCESSES
+            or "pulsemonitor" in name_lower
+        ):
+            return reasons
         if not exe:
             return reasons
+        # Проверяем, что exe — это реальный путь к файлу с буквой диска или UNC, а не имя псевдопроцесса ядра
+        if len(exe) < 3 or not (exe[1] == ":" or exe.startswith("\\\\")):
+            return reasons
+        if MEIPASS_DIR and _is_under(exe, [MEIPASS_DIR]):
+            return reasons
+
         exe_lower = _lower(exe)
-        name_lower = _lower(name)
         if _is_under(exe, TEMP_DIRS):
-            reasons.append("запущен из TEMP")
+            reasons.append("запущен из папки TEMP")
         if name_lower in SYSTEM_PROCESS_NAMES and not any(
             exe_lower.startswith(root) for root in (SYSTEM32, WINDIR)
         ):
-            reasons.append("системное имя вне System32")
+            reasons.append("системное имя Windows запущено вне C:\\Windows")
         if not os.path.isfile(exe):
-            reasons.append("файл отсутствует")
+            reasons.append("исполняемый файл удалён с диска")
         if _is_under(exe, USER_WRITABLE_DIRS) and name_lower in SYSTEM_PROCESS_NAMES:
-            reasons.append("системное имя в пользовательской папке")
+            reasons.append("маскировка под системный процесс в папке пользователя")
         return reasons
+
+    def _get_kb(
+        self, entry: dict[str, Any], name: str, exe: str, pid: int, session: int
+    ) -> dict[str, Any]:
+        services = self._services_by_pid.get(pid, [])
+        kb = entry.get("kb")
+        if (
+            isinstance(kb, dict)
+            and kb.get("_exe") == exe
+            and kb.get("_svc_cnt") == len(services)
+        ):
+            return kb
+        kb = describe_process(name=name, exe=exe, pid=pid, session=session, services=services)
+        kb["_exe"] = exe
+        kb["_svc_cnt"] = len(services)
+        entry["kb"] = kb
+        return kb
 
     def _build_fast_row(self, item: dict, total_ram: int) -> dict[str, Any] | None:
         pid = int(item["pid"])
@@ -268,22 +380,30 @@ class ProcessCollector:
             else:
                 name = f"PID {pid}"
 
-        is_system_name = name.lower() in SYSTEM_PROCESS_NAMES
+        name_low = name.lower()
+        is_system_name = name_low in SYSTEM_PROCESS_NAMES or name_low in KERNEL_PSEUDO_PROCESSES
+        is_self = pid in (OWN_PID, OWN_PPID) or "pulsemonitor" in name_low
         flags: list[str] = []
         if pid in (0, 4) or session == 0 or is_system_name:
             flags.append("системный")
-        if session == 0:
+        if session == 0 and name_low not in KERNEL_PSEUDO_PROCESSES and pid not in (0, 4):
             flags.append("служба")
-        elif not window_title and not is_system_name:
+        elif not window_title and not is_system_name and not is_self:
             flags.append("скрыт")
 
-        exe = entry.get("exe")
-        suspicious_reasons = list(entry.get("exe_reasons") or [])
-        if exe == "" and session > 0 and is_system_name:
-            suspicious_reasons.append("путь недоступен")
+        exe = entry.get("exe") or ""
+        if exe and (len(exe) < 3 or not (exe[1] == ":" or exe.startswith("\\\\"))):
+            exe = ""
+        suspicious_reasons = (
+            [] if (is_self or name_low in KERNEL_PSEUDO_PROCESSES) else list(entry.get("exe_reasons") or [])
+        )
         suspicious = bool(suspicious_reasons)
         if suspicious:
             flags.append("подозрительный")
+            for reason in suspicious_reasons:
+                flags.append(f"⚠️ {reason}")
+
+        kb = self._get_kb(entry, name, exe, pid, session)
 
         rss = int(item.get("rss") or 0)
         mem_pct = (rss / total_ram * 100.0) if total_ram else 0.0
@@ -294,23 +414,31 @@ class ProcessCollector:
             "pid": pid,
             "ppid": int(item.get("ppid") or 0),
             "name": name,
+            "description": kb["summary"],
+            "kb_details": kb["details"],
+            "kb_category": kb["category"],
+            "kb_safety": kb["safety"],
+            "kb_safety_text": kb["safety_text"],
+            "kb_company": kb["company"],
+            "kb_services": kb["services"],
             "flags": ", ".join(flags),
             "flags_list": flags,
             "suspicious": suspicious,
             "suspicious_reasons": suspicious_reasons,
+            "suspicious_text": ", ".join(suspicious_reasons),
             "cpu": cpu,
             "cpu_raw": round(cpu * self._cores, 1),
             "mem": rss,
             "mem_pct": round(mem_pct, 2),
             "threads": int(item.get("threads") or 0),
             "handles": int(item.get("handles") or 0),
-            "user": entry.get("user") or "",
+            "user": entry.get("user") or ("SYSTEM" if session == 0 else ""),
             "status": "Простой" if pid == 0 else "Работает",
             "session": session,
             "started": format_timestamp(create_time) if create_time > 0 else "—",
             "started_ts": create_time,
             "window": window_title,
-            "exe": exe or "",
+            "exe": exe,
             "cmdline": entry.get("cmdline") or "",
             "io_read": 0,
             "io_write": 0,
@@ -321,7 +449,6 @@ class ProcessCollector:
 
     def _snapshot_psutil(self, started: float) -> dict[str, Any]:
         self._visible_windows = visible_windows()
-        # Подсчёт дескрипторов — дорогая операция, поэтому только по запросу.
         try:
             from .config_manager import config
 
@@ -352,13 +479,14 @@ class ProcessCollector:
                     "proc": proc,
                     "pid": pid,
                     "name": info.get("name") or f"PID {pid}",
-                    "exe": None,
+                    "exe": query_process_image_path(pid) if pid > 4 else "",
                     "cmdline": None,
                     "user": None,
                     "create_time": create_time,
                     "exe_reasons": None,
                     "handles": 0,
                     "handles_ts": 0.0,
+                    "kb": None,
                 }
                 self._cache[pid] = entry
             raw_entries.append((entry, info))
@@ -416,7 +544,7 @@ class ProcessCollector:
         except Exception:
             cpu_raw = 0.0
 
-        if entry["exe"] is None:
+        if not entry.get("exe"):
             try:
                 entry["exe"] = proc.exe() or ""
             except Exception:
@@ -450,7 +578,6 @@ class ProcessCollector:
 
         handles = int(entry.get("handles", 0) or 0)
         now = time.time()
-        # num_handles перечисляет все дескрипторы системы — обновляем редко.
         if self._with_handles and now - float(entry.get("handles_ts", 0.0)) > 15.0:
             try:
                 handles = int(proc.num_handles())
@@ -469,9 +596,6 @@ class ProcessCollector:
         except Exception:
             ppid = 0
 
-        io_read = 0
-        io_write = 0
-
         create_time = float(entry.get("create_time") or 0.0)
         exe = entry["exe"] or ""
         window_title = self._visible_windows.get(pid, "")
@@ -484,38 +608,24 @@ class ProcessCollector:
         if session == 0:
             flags.append("служба")
         elif not window_title:
-            # Приложение работает в сессии пользователя без видимого окна.
             flags.append("скрыт")
 
-        exe_lower = _lower(exe)
-        name_lower = _lower(name)
-
         if entry.get("exe_reasons") is None:
-            reasons: list[str] = []
-            if exe:
-                if _is_under(exe, TEMP_DIRS):
-                    reasons.append("запущен из TEMP")
-                if name_lower in SYSTEM_PROCESS_NAMES and not any(
-                    exe_lower.startswith(root) for root in (SYSTEM32, WINDIR)
-                ):
-                    reasons.append("системное имя вне System32")
-                if not os.path.isfile(exe):
-                    reasons.append("файл отсутствует")
-                if (
-                    _is_under(exe, USER_WRITABLE_DIRS)
-                    and name_lower in SYSTEM_PROCESS_NAMES
-                ):
-                    reasons.append("системное имя в пользовательской папке")
-            entry["exe_reasons"] = reasons
+            entry["exe_reasons"] = self._exe_reasons(exe, name, pid)
 
-        suspicious_reasons = list(entry["exe_reasons"])
-        if not exe and pid > 4 and session > 0:
-            suspicious_reasons.append("путь недоступен")
+        name_low = name.lower()
+        is_self = pid in (OWN_PID, OWN_PPID) or "pulsemonitor" in name_low
+        suspicious_reasons = (
+            [] if (is_self or name_low in KERNEL_PSEUDO_PROCESSES) else list(entry["exe_reasons"])
+        )
 
         suspicious = bool(suspicious_reasons)
         if suspicious:
             flags.append("подозрительный")
+            for reason in suspicious_reasons:
+                flags.append(f"⚠️ {reason}")
 
+        kb = self._get_kb(entry, name, exe, pid, session)
         cpu_total = round(min(max(cpu_raw / self._cores, 0.0), 100.0), 1)
         entry["_cpu"] = cpu_total
 
@@ -523,10 +633,18 @@ class ProcessCollector:
             "pid": pid,
             "ppid": ppid,
             "name": name,
+            "description": kb["summary"],
+            "kb_details": kb["details"],
+            "kb_category": kb["category"],
+            "kb_safety": kb["safety"],
+            "kb_safety_text": kb["safety_text"],
+            "kb_company": kb["company"],
+            "kb_services": kb["services"],
             "flags": ", ".join(flags),
             "flags_list": flags,
             "suspicious": suspicious,
             "suspicious_reasons": suspicious_reasons,
+            "suspicious_text": ", ".join(suspicious_reasons),
             "cpu": cpu_total,
             "cpu_raw": round(float(cpu_raw), 1),
             "mem": rss,
@@ -541,8 +659,8 @@ class ProcessCollector:
             "window": window_title,
             "exe": exe,
             "cmdline": entry["cmdline"] or "",
-            "io_read": io_read,
-            "io_write": io_write,
+            "io_read": 0,
+            "io_write": 0,
             "mem_text": format_bytes(rss),
             "cpu_text": f"{cpu_total:.1f}%",
             "mem_pct_text": f"{mem_pct:.1f}%",
@@ -579,6 +697,62 @@ class ProcessCollector:
             )
         except Exception as exc:
             return False, tr("Ошибка: {error}", error=exc)
+
+    def terminate_and_delete(
+        self, pid: int, *, delete_folder: bool = False, shred_passes: int = 0
+    ) -> tuple[bool, str]:
+        """
+        Завершает процесс (и все процессы из того же исполняемого файла)
+        и безвозвратно удаляет его EXE-файл или всю папку программы.
+        Системные файлы Windows защищены от удаления (HARDBLOCK).
+        """
+        if pid in (0, 4) or pid == os.getpid():
+            return False, "Нельзя удалить системное ядро или сам Pulse Monitor."
+
+        exe = ""
+        name = ""
+        cached = self._cache.get(pid)
+        if isinstance(cached, dict):
+            exe = cached.get("exe") or ""
+            name = cached.get("name") or ""
+        if not exe:
+            exe = query_process_image_path(pid)
+        if not exe:
+            try:
+                proc = self._proc(pid)
+                exe = proc.exe() or ""
+                name = name or proc.name()
+            except Exception:
+                pass
+
+        if not exe or not os.path.exists(exe):
+            return False, "Путь к исполняемому файлу процесса не найден или недоступен."
+
+        kb = describe_process(name=name or Path(exe).name, exe=exe, pid=pid)
+        if kb.get("safety") == "critical":
+            return False, f"Запрещено удалять критический системный процесс ({name})."
+
+        target_path = str(Path(exe).resolve().parent) if delete_folder else exe
+        safe, reason = is_safe_delete_path(target_path)
+        if not safe:
+            return False, f"Удаление заблокировано защитой: {reason}"
+
+        # Сначала завершаем сам целевой процесс
+        self.terminate(pid, force=True)
+        time.sleep(0.15)
+
+        # Затем принудительно удаляем файл/папку (с разблокировкой через Restart Manager)
+        res = delete_path_forced(
+            target_path,
+            keep_root_dir=False,
+            shred_passes=shred_passes,
+            unlock_if_locked=True,
+        )
+        if res.get("ok"):
+            freed = format_bytes(int(res.get("freed_bytes", 0)))
+            kind = "Папка процесса удалена" if delete_folder else "Файл процесса удалён"
+            return True, f"Процесс завершён. {kind}: {target_path} (освобождено {freed})"
+        return False, f"Процесс завершён, но удалить «{target_path}» не удалось: {res.get('error')}"
 
     def suspend(self, pid: int) -> tuple[bool, str]:
         try:
@@ -627,7 +801,8 @@ class ProcessCollector:
             proc = self._proc(pid)
             with proc.oneshot():
                 result["name"] = proc.name()
-                result["exe"] = self._safe(proc.exe, "")
+                exe_path = self._safe(proc.exe, "") or query_process_image_path(pid)
+                result["exe"] = exe_path
                 result["cmdline"] = " ".join(self._safe(proc.cmdline, []) or [])
                 result["cwd"] = self._safe(proc.cwd, "")
                 result["user"] = self._safe(proc.username, "")
@@ -689,6 +864,24 @@ class ProcessCollector:
 
             info = file_version_info(result.get("exe", ""))
             result.update({f"file_{key}": value for key, value in info.items()})
+
+            self._refresh_services_map()
+            kb = describe_process(
+                name=result.get("name", ""),
+                exe=result.get("exe", ""),
+                pid=pid,
+                services=self._services_by_pid.get(pid, []),
+            )
+            result["kb_summary"] = kb["summary"]
+            result["kb_details"] = kb["details"]
+            result["kb_category"] = kb["category"]
+            result["kb_safety"] = kb["safety"]
+            result["kb_safety_text"] = kb["safety_text"]
+            result["kb_services"] = ", ".join(kb["services"]) if kb["services"] else "—"
+            if not result.get("file_company") and kb.get("company"):
+                result["file_company"] = kb["company"]
+            if not result.get("file_description") and kb.get("summary"):
+                result["file_description"] = kb["summary"]
         except psutil.NoSuchProcess:
             result["error"] = "Процесс не найден"
         except psutil.AccessDenied:

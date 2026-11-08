@@ -40,20 +40,21 @@ BACKUP_FILE = CONFIG_DIR / "settings.backup.json"
 
 PROCESS_COLUMNS = [
     ("pid", "PID", 70, True),
-    ("name", "Имя", 230, True),
+    ("name", "Имя", 210, True),
+    ("description", "Что делает процесс", 280, True),
     ("flags", "Флаги", 140, True),
     ("cpu", "CPU %", 80, True),
-    ("mem", "Память", 110, True),
-    ("mem_pct", "Память %", 90, True),
+    ("mem", "Память", 105, True),
+    ("mem_pct", "Память %", 85, True),
     ("threads", "Потоки", 80, False),
     ("handles", "Дескрипторы", 100, False),
     ("user", "Пользователь", 170, False),
-    ("status", "Статус", 120, True),
+    ("status", "Статус", 110, True),
     ("session", "Сессия", 80, False),
     ("ppid", "PPID", 70, False),
     ("started", "Запущен", 150, False),
     ("window", "Окно", 220, False),
-    ("exe", "Путь", 380, False),
+    ("exe", "Путь", 320, True),
 ]
 
 DEFAULTS: dict[str, Any] = {
@@ -65,6 +66,7 @@ DEFAULTS: dict[str, Any] = {
         "processes": 2000,
         "network": 2500,
         "dashboard": 1200,
+        "gpu": 1500,
     },
     "processes": {
         "columns": {key: visible for key, _title, _width, visible in PROCESS_COLUMNS},
@@ -87,8 +89,8 @@ DEFAULTS: dict[str, Any] = {
         "explorer_integration": False,
     },
     "window": {
-        "width": 1320,
-        "height": 840,
+        "width": 1360,
+        "height": 860,
         "x": None,
         "y": None,
         "maximized": False,
@@ -225,4 +227,3 @@ class ConfigManager:
 
 
 config = ConfigManager()
-

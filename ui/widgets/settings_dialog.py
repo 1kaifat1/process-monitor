@@ -143,13 +143,19 @@ class SettingsDialog(QDialog):
         self.interval_dashboard.setSingleStep(100)
         self.interval_dashboard.setSuffix(f" {tr('мс')}")
         form.addRow(tr("Обзор (графики):"), self.interval_dashboard)
+
+        self.interval_gpu = QSpinBox()
+        self.interval_gpu.setRange(500, 20000)
+        self.interval_gpu.setSingleStep(100)
+        self.interval_gpu.setSuffix(f" {tr('мс')}")
+        form.addRow(tr("Видеокарта (GPU):"), self.interval_gpu)
         layout.addLayout(form)
 
         hint = QLabel(
             tr(
                 "Чем больше интервал, тем ниже нагрузка. При неактивной вкладке "
                 "опрос автоматически замедляется в 3 раза. Рекомендуемые значения: "
-                "2000 мс для процессов и сети, 1200 мс для обзора."
+                "2000 мс для процессов и сети, 1200 мс для обзора, 1500 мс для GPU."
             )
         )
         hint.setObjectName("Muted")
@@ -299,6 +305,7 @@ class SettingsDialog(QDialog):
         self.interval_processes.setValue(int(config.get("intervals.processes", 2000)))
         self.interval_network.setValue(int(config.get("intervals.network", 2500)))
         self.interval_dashboard.setValue(int(config.get("intervals.dashboard", 1200)))
+        self.interval_gpu.setValue(int(config.get("intervals.gpu", 1500)))
         for key, checkbox in self.column_checks.items():
             checkbox.setChecked(bool(config.get(f"processes.columns.{key}", True)))
         self.show_system_check.setChecked(
@@ -320,7 +327,6 @@ class SettingsDialog(QDialog):
             bool(config.get("behavior.slow_when_inactive", True))
         )
         self.autostart_check.setChecked(autostart_enabled())
-        # Источник истины — реестр: настройка могла быть сброшена вручную.
         self.explorer_integration_check.setChecked(context_menu_registered())
 
     def _save(self) -> None:
@@ -336,7 +342,6 @@ class SettingsDialog(QDialog):
         previous_language = str(config.get("language", "auto"))
         new_language = str(self.language_combo.currentData() or "auto")
 
-        # Интеграция с Проводником: состояние реестра приводим к чекбоксу.
         want_integration = self.explorer_integration_check.isChecked()
         registry_ok = True
         if want_integration != context_menu_registered():
@@ -356,6 +361,7 @@ class SettingsDialog(QDialog):
                 "processes": self.interval_processes.value(),
                 "network": self.interval_network.value(),
                 "dashboard": self.interval_dashboard.value(),
+                "gpu": self.interval_gpu.value(),
             },
             "processes": {
                 "columns": {
@@ -397,7 +403,6 @@ class SettingsDialog(QDialog):
             else:
                 script = str(Path(sys.argv[0]).resolve()) if sys.argv else None
                 executable = sys.executable
-                # Для фонового автозапуска нужен pythonw.exe (без консоли).
                 pythonw = Path(executable).with_name("pythonw.exe")
                 if pythonw.exists():
                     executable = str(pythonw)
@@ -469,5 +474,3 @@ class SettingsDialog(QDialog):
                 tr("Импорт"),
                 tr("Не удалось прочитать файл настроек"),
             )
-
-

@@ -358,7 +358,13 @@ class AutorunManager:
             )
         message = (err or out).strip()
         lowered = message.lower()
-        if "отказано" in lowered or "access is denied" in lowered or "5" in lowered:
+        if (
+            code == 5
+            or "отказано" in lowered
+            or "access is denied" in lowered
+            or "ошибка 5" in lowered
+            or "error 5" in lowered
+        ):
             return False, tr(
                 "Нужны права администратора для изменения службы"
             )
