@@ -26,6 +26,11 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config_manager import PROCESS_COLUMNS, config
+from core.explorer_registry import (
+    context_menu_registered,
+    register_context_menu,
+    unregister_context_menu,
+)
 from core.i18n import LANGUAGE_NAMES, tr
 from core.winapi import autostart_enabled, set_autostart
 
@@ -138,13 +143,19 @@ class SettingsDialog(QDialog):
         self.interval_dashboard.setSingleStep(100)
         self.interval_dashboard.setSuffix(f" {tr('мс')}")
         form.addRow(tr("Обзор (графики):"), self.interval_dashboard)
+
+        self.interval_gpu = QSpinBox()
+        self.interval_gpu.setRange(500, 20000)
+        self.interval_gpu.setSingleStep(100)
+        self.interval_gpu.setSuffix(f" {tr('мс')}")
+        form.addRow(tr("Видеокарта (GPU):"), self.interval_gpu)
         layout.addLayout(form)
 
         hint = QLabel(
             tr(
                 "Чем больше интервал, тем ниже нагрузка. При неактивной вкладке "
                 "опрос автоматически замедляется в 3 раза. Рекомендуемые значения: "
-                "2000 мс для процессов и сети, 1200 мс для обзора."
+                "2000 мс для процессов и сети, 1200 мс для обзора, 1500 мс для GPU."
             )
         )
         hint.setObjectName("Muted")
@@ -208,14 +219,29 @@ class SettingsDialog(QDialog):
         self.slow_inactive_check = QCheckBox(
             tr("Снижать частоту опроса, когда вкладка неактивна")
         )
+        self.explorer_integration_check = QCheckBox(
+            tr("Интегрировать в контекстное меню Проводника (ПКМ)")
+        )
         for checkbox in (
             self.close_to_tray_check,
             self.start_minimized_check,
             self.autostart_check,
             self.remember_geometry_check,
             self.slow_inactive_check,
+            self.explorer_integration_check,
         ):
             layout.addWidget(checkbox)
+
+        integration_hint = QLabel(
+            tr(
+                "Пункт «Разблокировать / Завершить процесс» появится в контекстном "
+                "меню файлов и папок. Запись выполняется в HKEY_CURRENT_USER и не "
+                "требует прав администратора."
+            )
+        )
+        integration_hint.setObjectName("Muted")
+        integration_hint.setWordWrap(True)
+        layout.addWidget(integration_hint)
 
         hint = QLabel(
             tr(
@@ -279,6 +305,7 @@ class SettingsDialog(QDialog):
         self.interval_processes.setValue(int(config.get("intervals.processes", 2000)))
         self.interval_network.setValue(int(config.get("intervals.network", 2500)))
         self.interval_dashboard.setValue(int(config.get("intervals.dashboard", 1200)))
+        self.interval_gpu.setValue(int(config.get("intervals.gpu", 1500)))
         for key, checkbox in self.column_checks.items():
             checkbox.setChecked(bool(config.get(f"processes.columns.{key}", True)))
         self.show_system_check.setChecked(
@@ -300,6 +327,7 @@ class SettingsDialog(QDialog):
             bool(config.get("behavior.slow_when_inactive", True))
         )
         self.autostart_check.setChecked(autostart_enabled())
+        self.explorer_integration_check.setChecked(context_menu_registered())
 
     def _save(self) -> None:
         if not any(checkbox.isChecked() for checkbox in self.column_checks.values()):
@@ -313,6 +341,17 @@ class SettingsDialog(QDialog):
         autostart = self.autostart_check.isChecked()
         previous_language = str(config.get("language", "auto"))
         new_language = str(self.language_combo.currentData() or "auto")
+
+        want_integration = self.explorer_integration_check.isChecked()
+        registry_ok = True
+        if want_integration != context_menu_registered():
+            registry_ok = (
+                register_context_menu()
+                if want_integration
+                else unregister_context_menu()
+            )
+        explorer_integration = context_menu_registered()
+
         values = {
             "language": new_language,
             "theme": self.theme_combo.currentData() or "dark",
@@ -322,6 +361,7 @@ class SettingsDialog(QDialog):
                 "processes": self.interval_processes.value(),
                 "network": self.interval_network.value(),
                 "dashboard": self.interval_dashboard.value(),
+                "gpu": self.interval_gpu.value(),
             },
             "processes": {
                 "columns": {
@@ -337,10 +377,22 @@ class SettingsDialog(QDialog):
                 "autostart_app": autostart,
                 "remember_geometry": self.remember_geometry_check.isChecked(),
                 "slow_when_inactive": self.slow_inactive_check.isChecked(),
+                "explorer_integration": explorer_integration,
             },
         }
         config.update(values)
         self.language_changed = previous_language != new_language
+
+        if not registry_ok:
+            self.explorer_integration_check.setChecked(explorer_integration)
+            QMessageBox.warning(
+                self,
+                tr("Контекстное меню"),
+                tr(
+                    "Не удалось изменить пункт контекстного меню Проводника. "
+                    "Проверьте права доступа к реестру."
+                ),
+            )
 
         try:
             from pathlib import Path
@@ -351,7 +403,6 @@ class SettingsDialog(QDialog):
             else:
                 script = str(Path(sys.argv[0]).resolve()) if sys.argv else None
                 executable = sys.executable
-                # Для фонового автозапуска нужен pythonw.exe (без консоли).
                 pythonw = Path(executable).with_name("pythonw.exe")
                 if pythonw.exists():
                     executable = str(pythonw)
@@ -380,6 +431,8 @@ class SettingsDialog(QDialog):
             return
         previous_language = str(config.get("language", "auto"))
         config.reset()
+        if context_menu_registered():
+            unregister_context_menu()
         self.language_changed = previous_language != str(
             config.get("language", "auto")
         )
@@ -421,5 +474,3 @@ class SettingsDialog(QDialog):
                 tr("Импорт"),
                 tr("Не удалось прочитать файл настроек"),
             )
-
-

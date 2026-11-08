@@ -574,3 +574,150 @@ EN.update(
         "Превышено время ожидания": "Timed out",
     }
 )
+
+EN.update(
+    {
+        # Интеграция с Проводником и разблокировка файлов
+        "Разблокировать / Завершить процесс (Pulse Monitor)": (
+            "Unlock / End process (Pulse Monitor)"
+        ),
+        "Интегрировать в контекстное меню Проводника (ПКМ)": (
+            "Integrate into the Explorer context menu (right-click)"
+        ),
+        "Пункт «Разблокировать / Завершить процесс» появится в контекстном меню файлов и папок. Запись выполняется в HKEY_CURRENT_USER и не требует прав администратора.": (
+            "The “Unlock / End process” item will appear in the context menu of "
+            "files and folders. It is written to HKEY_CURRENT_USER and does not "
+            "require administrator rights."
+        ),
+        "Контекстное меню": "Context menu",
+        "Не удалось изменить пункт контекстного меню Проводника. Проверьте права доступа к реестру.": (
+            "Could not update the Explorer context menu item. Check registry "
+            "permissions."
+        ),
+        "Разблокировка файла": "Unlock file",
+        "Разблокировка файла или папки": "Unlock file or folder",
+        "Файл или папка: {path}": "File or folder: {path}",
+        "Ищу процессы, удерживающие файл…": "Looking for processes locking the file…",
+        "Не удалось опросить Restart Manager: {error}": (
+            "Could not query Restart Manager: {error}"
+        ),
+        "Файл не заблокирован — удерживающих процессов не найдено.": (
+            "The file is not locked — no holding processes found."
+        ),
+        "Найдено процессов: {count}": "Processes found: {count}",
+        "Перезапустить от имени Администратора": "Restart as Administrator",
+        "Завершить принудительно и удалить блокировку": (
+            "Force terminate and release the lock"
+        ),
+        "Завершить принудительно {count} процесс(ов)? Несохранённые данные этих приложений могут быть потеряны.": (
+            "Force terminate {count} process(es)? Unsaved data in these "
+            "applications may be lost."
+        ),
+        "Файл или папка не найдены.": "File or folder not found.",
+        "Не указан путь к файлу или папке.": "No file or folder path specified.",
+        "Блокировка снята: завершено процессов — {count}, дескрипторы освобождены.": (
+            "Lock released: {count} process(es) terminated, handles released."
+        ),
+        "Файл не был заблокирован.": "The file was not locked.",
+        "Не удалось снять блокировку. Остались процессы: {details}": (
+            "Could not release the lock. Remaining processes: {details}"
+        ),
+        "неизвестно": "unknown",
+        "Недостаточно прав: часть процессов запущена от имени администратора или системы. Перезапустите Pulse Monitor с повышенными правами, чтобы завершить их.": (
+            "Not enough permissions: some processes run as administrator or "
+            "SYSTEM. Restart Pulse Monitor elevated to terminate them."
+        ),
+        "доступ запрещён (нужны права администратора)": (
+            "access denied (administrator rights required)"
+        ),
+        "процесс уже завершён": "process has already exited",
+        "Повышение прав": "Elevation",
+        "Не удалось запустить приложение от имени администратора.": (
+            "Could not start the application as administrator."
+        ),
+        # Типы приложений Restart Manager
+        "приложение": "application",
+        "служба": "service",
+        "проводник": "explorer",
+        "консоль": "console",
+        "критический": "critical",
+    }
+)
+
+EN.update(
+    {
+        # GPU и очистка памяти
+        "Видеокарта": "GPU",
+        "Температура": "Temperature",
+        "Загрузка GPU": "GPU load",
+        "Контроллер памяти": "Memory controller",
+        "Видеопамять": "VRAM",
+        "МГц": "MHz",
+        "вентилятор": "fan",
+        "МБ": "MB",
+        "Очистить память": "Clean RAM",
+        "Очистка…": "Cleaning…",
+        "Очистка памяти…": "Cleaning memory…",
+        "Очистка памяти": "RAM cleanup",
+        "Очистка завершена: освобождено {mb} МБ": (
+            "Cleanup complete: {mb} MB freed"
+        ),
+        "часть процессов недоступна без прав администратора": (
+            "some processes require administrator rights"
+        ),
+        "Требуются права администратора для глубокой очистки.": (
+            "Administrator rights are required for deep cleanup."
+        ),
+        "Требуются права администратора для глубокой очистки. Перезапустите Pulse Monitor с повышенными правами.": (
+            "Administrator rights are required for deep cleanup. Restart "
+            "Pulse Monitor elevated."
+        ),
+        "Очистка памяти недоступна на этой платформе.": (
+            "RAM cleanup is not available on this platform."
+        ),
+        "Не удалось очистить память: {error}": "Could not clean RAM: {error}",
+    }
+)
+
+EN.update(
+    {
+        # Pulse Monitor 2.0: Очистка и База знаний процессов
+        "Pulse Monitor — мониторинг и очистка системы": "Pulse Monitor — system monitor & cleaner",
+        "МОНИТОРИНГ": "MONITORING",
+        "ОЧИСТКА И ДИСК": "CLEANER & DISK",
+        "Что делает процесс": "What this process does",
+        "Все процессы, что они делают, пути к файлам и управление": (
+            "All processes, what they do, file paths and control"
+        ),
+        "Быстрая очистка": "Quick Cleaner",
+        "Временные файлы, кэши браузеров и видеокарты, Корзина и SSD TRIM": (
+            "Temp files, browser & GPU shader caches, Recycle Bin and SSD TRIM"
+        ),
+        "Точечная очистка": "Precise Cleaner",
+        "Быстрые профили, поиск по фильтрам и разблокировка занятых файлов": (
+            "One-click profiles, custom filter search and locked file unlocker"
+        ),
+        "Диск и дубликаты": "Disk & Duplicates",
+        "Диск (WizTree) и дубликаты": "Disk (WizTree) & Duplicates",
+        "Дерево папок и файлов WizTree, активные процессы в папках, Treemap и дубликаты SHA-1": (
+            "WizTree folder & file tree, active processes in folders, Treemap and SHA-1 duplicates"
+        ),
+        "Интерактивная карта диска (Treemap), топ-100 файлов и поиск дубликатов SHA-1": (
+            "Interactive disk Treemap, top-100 largest files and SHA-1 duplicate finder"
+        ),
+        "Очистить ОЗУ": "Clean RAM",
+        "Что это?": "What is this?",
+        "Папка": "Folder",
+        "Необязательные / телеметрия": "Optional / telemetry",
+        "Видеокарта (GPU):": "GPU:",
+        "⚠️ Показать подозрительные ({count})": "⚠️ Show suspicious ({count})",
+        "⚠️ Подозрительные ({count})": "⚠️ Suspicious ({count})",
+        "✓ Показать все процессы": "✓ Show all processes",
+        "📊 Сканировать WizTree + Процессы": "📊 Scan WizTree + Processes",
+        "🌳 Дерево WizTree + Процессы и Карта": "🌳 WizTree + Processes & Map",
+        "♻️ В Корзину": "♻️ To Recycle Bin",
+        "🧨 Удалить навсегда (с авто-завершением процессов)": (
+            "🧨 Delete permanently (auto-kill folder processes)"
+        ),
+    }
+)

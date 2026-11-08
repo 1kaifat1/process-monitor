@@ -133,6 +133,9 @@ class AutorunView(QWidget):
 
     def _elevate(self) -> None:
         if relaunch_as_admin():
+            window = self.window()
+            if hasattr(window, "_shutdown"):
+                window._shutdown()
             QApplication.quit()
         else:
             QMessageBox.warning(
@@ -266,4 +269,3 @@ class AutorunView(QWidget):
                 error=entry.get("command") or tr("Команда отсутствует"),
             ),
         )
-

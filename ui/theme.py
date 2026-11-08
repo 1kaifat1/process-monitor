@@ -147,7 +147,7 @@ def build_stylesheet(theme: str, accent: str, font_size: int) -> str:
         color: {c['text']};
         border: 1px solid {c['border']};
         border-radius: 8px;
-        padding: 7px 14px;
+        padding: 6px 11px;
     }}
     QPushButton:hover {{
         border-color: {rgba(accent, 0.65)};
@@ -244,7 +244,7 @@ def build_stylesheet(theme: str, accent: str, font_size: int) -> str:
         background: {accent};
         border-color: {accent};
     }}
-    QTableView {{
+    QTableView, QTreeView, QTreeWidget {{
         background: {c['panel2']};
         alternate-background-color: {rgba(c['text'], 0.025)};
         border: 1px solid {c['border']};
@@ -253,11 +253,11 @@ def build_stylesheet(theme: str, accent: str, font_size: int) -> str:
         selection-background-color: {rgba(accent, 0.22)};
         selection-color: {c['text']};
     }}
-    QTableView::item {{
+    QTableView::item, QTreeView::item, QTreeWidget::item {{
         padding: 4px 6px;
         border: none;
     }}
-    QTableView::item:hover {{
+    QTableView::item:hover, QTreeView::item:hover, QTreeWidget::item:hover {{
         background: {rgba(accent, 0.08)};
     }}
     QHeaderView::section {{

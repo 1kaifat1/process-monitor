@@ -1,4 +1,4 @@
-"""Главное окно Pulse Monitor."""
+"""Главное окно Pulse Monitor: комбо системного монитора и центра очистки диска."""
 
 from __future__ import annotations
 
@@ -29,18 +29,26 @@ from core.process_collector import ProcessCollector
 from core.system_stats import collect_system_stats
 from core.utils import is_admin, relaunch_as_admin
 from core.workers import CollectorThread, stop_all
+from ui.gpu_monitor_controller import GpuMonitorController
+from ui.ram_clean_controller import RamCleanController
 from ui.theme import apply_theme, load_app_icon
 from ui.widgets.autorun_view import AutorunView
+from ui.widgets.cleaner_view import CleanerView
 from ui.widgets.dashboard_view import DashboardView
+from ui.widgets.disk_analyzer_view import DiskAnalyzerView
 from ui.widgets.network_view import NetworkView
+from ui.widgets.precise_cleaner_view import PreciseCleanerView
 from ui.widgets.process_view import ProcessView
 from ui.widgets.settings_dialog import SettingsDialog
 
 PAGES = [
     ("Обзор", "Сводка по системе, графики и топ процессов"),
-    ("Процессы", "Все процессы, включая скрытые и фоновые"),
+    ("Процессы", "Все процессы, что они делают, пути к файлам и управление"),
     ("Сеть", "Скорость интерфейсов и соединения процессов"),
     ("Автозагрузка", "Реестр, папка «Автозагрузка» и службы"),
+    ("Быстрая очистка", "Временные файлы, кэши браузеров и видеокарты, Корзина и SSD TRIM"),
+    ("Точечная очистка", "Быстрые профили, поиск по фильтрам и разблокировка занятых файлов"),
+    ("Диск (WizTree) и дубликаты", "Дерево папок и файлов WizTree, активные процессы в папках, Treemap и дубликаты SHA-1"),
 ]
 
 APP_TITLE = "Pulse Monitor"
@@ -50,27 +58,31 @@ class MainWindow(QMainWindow):
     def __init__(self, honor_start_minimized: bool = True) -> None:
         super().__init__()
         apply_config_language()
-        self.setWindowTitle(tr("Pulse Monitor — мониторинг системы"))
+        self.setWindowTitle(tr("Pulse Monitor — мониторинг и очистка системы"))
         self.setWindowIcon(load_app_icon(64))
-        self.setMinimumSize(1080, 680)
+        self.setMinimumSize(1120, 700)
         self._honor_start_minimized = honor_start_minimized
 
         self.process_collector = ProcessCollector()
         self.network_collector = NetworkCollector()
         self.autorun_manager = AutorunManager()
         self._threads: list[CollectorThread] = []
+        self._process_thread: CollectorThread | None = None
+        self._network_thread: CollectorThread | None = None
+        self._system_thread: CollectorThread | None = None
+        self._shutting_down = False
         self._tray_message_shown = False
         self._current_page = 0
 
         self._build_ui()
+        self.gpu_monitor = GpuMonitorController(self, self.dashboard_view)
+        self.ram_cleaner = RamCleanController(self.clean_ram_button, self)
         self._build_tray()
-        self._restore_geometry()
         self._start_workers()
+        self._restore_geometry()
         self._setup_shortcuts()
 
         QTimer.singleShot(250, self.autorun_view.refresh_now)
-        QTimer.singleShot(250, self.process_view.refresh_now)
-        QTimer.singleShot(450, self.network_view.refresh_now)
         QTimer.singleShot(0, self._on_page_changed)
 
         if honor_start_minimized and config.get("behavior.start_minimized", False):
@@ -103,11 +115,28 @@ class MainWindow(QMainWindow):
         self.process_view = ProcessView(self.process_collector)
         self.network_view = NetworkView(self.network_collector, self.process_collector)
         self.autorun_view = AutorunView(self.autorun_manager)
+        self.cleaner_view = CleanerView()
+        self.precise_cleaner_view = PreciseCleanerView()
+        self.disk_analyzer_view = DiskAnalyzerView()
+
+        self.dashboard_view.focus_process_requested.connect(
+            self._focus_process_from_dashboard
+        )
+        self.dashboard_view.show_suspicious_requested.connect(
+            self._show_suspicious_from_dashboard
+        )
+        self.disk_analyzer_view.focus_process_requested.connect(
+            self._focus_process_from_dashboard
+        )
+
         self.views = [
             self.dashboard_view,
             self.process_view,
             self.network_view,
             self.autorun_view,
+            self.cleaner_view,
+            self.precise_cleaner_view,
+            self.disk_analyzer_view,
         ]
         for view in self.views:
             self.stack.addWidget(view)
@@ -122,36 +151,46 @@ class MainWindow(QMainWindow):
         self._status_label = QLabel(tr("Готово"))
         self._status_label.setObjectName("Muted")
         self.statusBar().addWidget(self._status_label, 1)
-        self.version_label = QLabel("v1.0 · psutil")
+        self.version_label = QLabel("v2.0 · Pulse & Disk Master")
         self.version_label.setObjectName("Muted")
         self.statusBar().addPermanentWidget(self.version_label)
 
     def _build_sidebar(self) -> QFrame:
         sidebar = QFrame()
         sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(236)
+        sidebar.setFixedWidth(242)
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(16, 20, 16, 16)
-        layout.setSpacing(6)
+        layout.setContentsMargins(16, 18, 16, 14)
+        layout.setSpacing(4)
 
         logo = QLabel("PULSE")
         logo.setObjectName("Logo")
-        sub = QLabel(tr("MONITOR · все процессы"))
+        sub = QLabel(tr("MONITOR & CLEANER"))
         sub.setObjectName("LogoSub")
         layout.addWidget(logo)
         layout.addWidget(sub)
-        layout.addSpacing(18)
+        layout.addSpacing(10)
 
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
         self.nav_buttons: list[QPushButton] = []
-        icons = ["◉", "▤", "⇅", "⏻"]
-        for index, (title, _subtitle) in enumerate(PAGES):
+        icons = ["◉", "▤", "⇅", "⏻", "🧹", "🎯", "💿"]
+
+        mon_header = QLabel(tr("МОНИТОРИНГ"))
+        mon_header.setObjectName("LogoSub")
+        layout.addWidget(mon_header)
+
+        for index, (title, subtitle) in enumerate(PAGES):
+            if index == 4:
+                layout.addSpacing(10)
+                clean_header = QLabel(tr("ОЧИСТКА И ДИСК"))
+                clean_header.setObjectName("LogoSub")
+                layout.addWidget(clean_header)
             button = QPushButton(f"{icons[index]}  {tr(title)}")
             button.setObjectName("NavButton")
             button.setCheckable(True)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.setToolTip(tr(title))
+            button.setToolTip(tr(subtitle))
             button.clicked.connect(lambda _checked, page=index: self.set_page(page))
             self.nav_group.addButton(button, index)
             self.nav_buttons.append(button)
@@ -181,7 +220,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.elevate_button)
         self._update_admin_state()
 
-        version = QLabel("Pulse Monitor 1.0")
+        version = QLabel("Pulse Monitor 2.0")
         version.setObjectName("LogoSub")
         layout.addWidget(version)
         self._update_theme_button()
@@ -206,6 +245,10 @@ class MainWindow(QMainWindow):
         layout.addLayout(texts)
         layout.addStretch(1)
 
+        self.clean_ram_button = QPushButton(tr("Очистить ОЗУ"))
+        self.clean_ram_button.setToolTip("Ctrl+R — сброс рабочих наборов процессов в ОЗУ")
+        layout.addWidget(self.clean_ram_button)
+
         self.refresh_button = QPushButton(tr("Обновить"))
         self.refresh_button.clicked.connect(self.refresh_current)
         layout.addWidget(self.refresh_button)
@@ -216,6 +259,14 @@ class MainWindow(QMainWindow):
         layout.addWidget(settings_action)
         return header
 
+    def _focus_process_from_dashboard(self, pid: int) -> None:
+        self.set_page(1)
+        self.process_view.focus_pid(pid)
+
+    def _show_suspicious_from_dashboard(self) -> None:
+        self.set_page(1)
+        self.process_view.show_suspicious_only()
+
     # ------------------------------------------------------------------
     # Трей и потоки
     # ------------------------------------------------------------------
@@ -224,7 +275,7 @@ class MainWindow(QMainWindow):
         if not QSystemTrayIcon.isSystemTrayAvailable():
             return
         tray = QSystemTrayIcon(self.windowIcon(), self)
-        tray.setToolTip(tr("Pulse Monitor — мониторинг системы"))
+        tray.setToolTip(tr("Pulse Monitor — мониторинг и очистка системы"))
         menu = QMenu()
         show_action = menu.addAction(tr("Показать окно"))
         show_action.triggered.connect(self._show_window)
@@ -234,6 +285,9 @@ class MainWindow(QMainWindow):
             action.triggered.connect(
                 lambda _checked=False, page=index: self._show_page(page)
             )
+        menu.addSeparator()
+        clean_action = menu.addAction(tr("Очистить ОЗУ"))
+        clean_action.triggered.connect(self.ram_cleaner.clean)
         menu.addSeparator()
         settings_action = menu.addAction(tr("Настройки…"))
         settings_action.triggered.connect(self.open_settings)
@@ -364,14 +418,22 @@ class MainWindow(QMainWindow):
             if hasattr(view, "set_active"):
                 view.set_active(index == self._current_page)
         if self._current_page == 0:
-            self.dashboard_view.set_active(True)
-            self.process_view.set_active(False)
-        view = self.views[self._current_page]
-        if self._current_page == 3:
+            if self._system_thread is not None:
+                self._system_thread.force_cycle()
+            self.gpu_monitor.force_cycle()
+            if self._process_thread is not None:
+                self._process_thread.force_cycle()
+        elif self._current_page == 1:
+            if self._process_thread is not None:
+                self._process_thread.force_cycle()
+        elif self._current_page == 2:
+            if self._network_thread is not None:
+                self._network_thread.force_cycle()
+        elif self._current_page == 3:
             if not self.autorun_view._entries:
                 self.autorun_view.refresh_now()
-        elif hasattr(view, "refresh_now"):
-            view.refresh_now()
+        elif self._current_page == 4:
+            self.cleaner_view.on_activated()
 
     def refresh_current(self) -> None:
         if self._current_page == 0:
@@ -379,13 +441,20 @@ class MainWindow(QMainWindow):
                 self.dashboard_view.set_system_snapshot(collect_system_stats())
             except Exception:
                 pass
+            self.gpu_monitor.force_cycle()
             self.process_view.refresh_now()
         elif self._current_page == 1:
             self.process_view.refresh_now()
         elif self._current_page == 2:
             self.network_view.refresh_now()
-        else:
+        elif self._current_page == 3:
             self.autorun_view.refresh_now()
+        elif self._current_page == 4:
+            self.cleaner_view.start_scan()
+        elif self._current_page == 5:
+            self.precise_cleaner_view.run_custom_search()
+        elif self._current_page == 6:
+            self.disk_analyzer_view.start_disk_analysis()
 
     # ------------------------------------------------------------------
     # Настройки, тема, права
@@ -410,11 +479,8 @@ class MainWindow(QMainWindow):
     def _recreate_window(self) -> None:
         """Пересоздать окно после смены языка, сохранив страницу и геометрию."""
         app = QApplication.instance()
-        self._save_geometry()
-        stop_all(self._threads)
+        self._shutdown()
         self._threads.clear()
-        if self.tray is not None:
-            self.tray.hide()
         page = self._current_page
         replacement = MainWindow(honor_start_minimized=False)
         replacement.set_page(page)
@@ -455,7 +521,7 @@ class MainWindow(QMainWindow):
             self.elevate_button.hide()
         else:
             self.admin_label.setText(
-                tr("Ограниченный доступ: часть системных данных и путей скрыта")
+                tr("Ограниченный доступ: для SSD TRIM и системных служб нужны права админа")
             )
             self.elevate_button.show()
 
@@ -474,8 +540,8 @@ class MainWindow(QMainWindow):
     # Геометрия, закрытие, горячие клавиши
     # ------------------------------------------------------------------
     def _restore_geometry(self) -> None:
-        width = int(config.get("window.width", 1320))
-        height = int(config.get("window.height", 840))
+        width = int(config.get("window.width", 1360))
+        height = int(config.get("window.height", 860))
         x = config.get("window.x")
         y = config.get("window.y")
         if x is None or y is None:
@@ -515,6 +581,7 @@ class MainWindow(QMainWindow):
     def _setup_shortcuts(self) -> None:
         bindings = {
             "F5": self.refresh_current,
+            "Ctrl+R": self.ram_cleaner.clean,
             "Ctrl+F": lambda: self.process_view.search.setFocus(),
             "Ctrl+,": self.open_settings,
             "Ctrl+Q": self.quit_app,
@@ -522,14 +589,22 @@ class MainWindow(QMainWindow):
             "Ctrl+2": lambda: self.set_page(1),
             "Ctrl+3": lambda: self.set_page(2),
             "Ctrl+4": lambda: self.set_page(3),
+            "Ctrl+5": lambda: self.set_page(4),
+            "Ctrl+6": lambda: self.set_page(5),
+            "Ctrl+7": lambda: self.set_page(6),
         }
         for sequence, handler in bindings.items():
             shortcut = QShortcut(QKeySequence(sequence), self)
             shortcut.activated.connect(handler)
 
     def _shutdown(self) -> None:
+        if self._shutting_down:
+            return
+        self._shutting_down = True
         self._save_geometry()
         stop_all(self._threads)
+        self.ram_cleaner.stop()
+        self.gpu_monitor.stop()
         if self.tray is not None:
             self.tray.hide()
 
@@ -545,7 +620,3 @@ class MainWindow(QMainWindow):
         self._shutdown()
         event.accept()
         QApplication.quit()
-
-
-
-

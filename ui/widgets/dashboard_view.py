@@ -1,4 +1,4 @@
-"""Панель обзора: системные метрики, графики и топ процессов."""
+"""Панель обзора: системные метрики, графики, топ процессов и быстрый переход к подозрительным."""
 
 from __future__ import annotations
 
@@ -21,12 +21,15 @@ from PyQt6.QtWidgets import (
 from core.i18n import tr
 from core.system_stats import system_info
 
+from .gpu_panel import GpuPanel
+
 TOP_LIMIT = 6
 
 
 class DashboardView(QWidget):
     status_message = pyqtSignal(str)
     focus_process_requested = pyqtSignal(int)
+    show_suspicious_requested = pyqtSignal()
 
     def __init__(self, process_collector, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -65,6 +68,9 @@ class DashboardView(QWidget):
             cards.addWidget(card, 0, index)
             cards.setColumnStretch(index, 1)
         root.addLayout(cards)
+
+        self.gpu_panel = GpuPanel()
+        root.addWidget(self.gpu_panel)
 
         charts = QHBoxLayout()
         charts.setSpacing(10)
@@ -139,6 +145,11 @@ class DashboardView(QWidget):
         self.system_labels["user"].setText(info["user"])
 
         actions = QHBoxLayout()
+        self.suspicious_button = QPushButton(tr("⚠️ Показать подозрительные (0)"))
+        self.suspicious_button.setToolTip(
+            tr("Открыть вкладку «Процессы» и показать только подозрительные процессы с объяснением причин")
+        )
+        actions.addWidget(self.suspicious_button)
         actions.addStretch(1)
         self.details_button = QPushButton(tr("Подробности процесса"))
         self.kill_button = QPushButton(tr("Завершить процесс"))
@@ -147,6 +158,9 @@ class DashboardView(QWidget):
         actions.addWidget(self.kill_button)
         root.addLayout(actions)
 
+        self.suspicious_button.clicked.connect(
+            lambda: self.show_suspicious_requested.emit()
+        )
         self.details_button.clicked.connect(self.show_details)
         self.kill_button.clicked.connect(self.kill_selected)
 
@@ -198,6 +212,9 @@ class DashboardView(QWidget):
         self.cpu_chart.push(float(stats.get("cpu", 0) or 0))
         self.ram_chart.push(float(stats.get("ram_percent", 0) or 0))
 
+    def set_gpu_snapshot(self, stats: dict | None) -> None:
+        self.gpu_panel.set_stats(stats)
+
     def set_network_snapshot(self, payload: dict) -> None:
         stats = payload.get("stats", {}) or {}
         self._network_stats = stats
@@ -210,14 +227,26 @@ class DashboardView(QWidget):
     def set_process_snapshot(self, payload: dict) -> None:
         self._rows = payload.get("rows", [])
         stats = payload.get("stats", {}) or {}
+        susp_count = int(stats.get("suspicious", 0) or 0)
         self.process_card.set_value(
             str(stats.get("total", 0)),
             tr(
                 "скрытых: {hidden} · подозрительных: {suspicious}",
                 hidden=stats.get("hidden", 0),
-                suspicious=stats.get("suspicious", 0),
+                suspicious=susp_count,
             ),
         )
+        self.suspicious_button.setText(
+            tr("⚠️ Показать подозрительные ({count})", count=susp_count)
+        )
+        if susp_count > 0:
+            self.suspicious_button.setStyleSheet(
+                "QPushButton { background: rgba(255, 84, 112, 0.22); "
+                "border: 1px solid #ff5470; color: #ff8fa3; font-weight: 600; }"
+                "QPushButton:hover { background: rgba(255, 84, 112, 0.35); }"
+            )
+        else:
+            self.suspicious_button.setStyleSheet("")
         if self._active:
             self._update_top_tables()
 
@@ -301,5 +330,3 @@ class DashboardView(QWidget):
     def apply_settings(self, accent: str = "#00f0ff") -> None:
         self.cpu_chart.set_color(accent)
         self.cpu_card.set_accent(accent)
-
-

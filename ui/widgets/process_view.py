@@ -1,6 +1,8 @@
-"""Вкладка процессов: модель, фильтрация и действия."""
+"""Вкладка процессов: модель, фильтрация, кнопка «⚠️ Подозрительные (N)», база знаний и управление."""
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from PyQt6.QtCore import (
     QAbstractTableModel,
@@ -18,6 +20,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
@@ -49,6 +52,19 @@ def _display(row: dict, key: str) -> str:
         return ", ".join(tr(flag) for flag in row.get("flags_list", []))
     if key == "status":
         return tr(str(row.get("status", "")))
+    if key == "description":
+        safety = row.get("kb_safety", "safe")
+        prefix = {
+            "critical": "⛔ ",
+            "caution": "⚠️ ",
+            "bloatware": "🧹 ",
+            "safe": "",
+        }.get(safety, "")
+        base = prefix + str(row.get("description") or "")
+        if row.get("suspicious") and row.get("suspicious_reasons"):
+            reasons_str = ", ".join(row["suspicious_reasons"])
+            return f"🚨 [ПОДОЗРИТЕЛЬНЫЙ: {reasons_str}] · {base}"
+        return base
     value = row.get(key, "")
     return "" if value is None else str(value)
 
@@ -107,34 +123,49 @@ class ProcessTableModel(QAbstractTableModel):
             return int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         if role == Qt.ItemDataRole.ToolTipRole:
             lines = [
-                f"{row.get('name', '')} (PID {row.get('pid', '')})",
-                tr("Путь: {path}", path=row.get("exe") or "—"),
-                tr("Командная строка: {cmd}", cmd=row.get("cmdline") or "—"),
-                tr("Пользователь: {user}", user=row.get("user") or "—"),
-                tr("Окно: {title}", title=row.get("window") or "—"),
+                f"🔹 {row.get('name', '')} (PID {row.get('pid', '')}) — {row.get('kb_category', 'Процесс')}",
+                f"📌 Назначение: {row.get('description') or '—'}",
             ]
             if row.get("suspicious_reasons"):
                 lines.append(
-                    tr("Признаки: {reasons}", reasons=", ".join(
-                        tr(reason) for reason in row["suspicious_reasons"]
-                    ))
+                    "🚨 Почему помечен как подозрительный: "
+                    + ", ".join(str(r) for r in row["suspicious_reasons"])
                 )
-            if row.get("flags_list"):
-                lines.append(
-                    tr(
-                        "Флаги: {flags}",
-                        flags=", ".join(tr(flag) for flag in row["flags_list"]),
-                    )
-                )
+            if row.get("kb_details") and row.get("kb_details") != row.get("description"):
+                lines.append(f"ℹ️ Подробнее: {row.get('kb_details')}")
+            if row.get("kb_safety_text"):
+                lines.append(row["kb_safety_text"])
+            if row.get("kb_services"):
+                lines.append("⚙️ Службы внутри: " + ", ".join(row["kb_services"][:8]))
+            lines.extend(
+                [
+                    tr("Путь: {path}", path=row.get("exe") or "—"),
+                    tr("Командная строка: {cmd}", cmd=row.get("cmdline") or "—"),
+                    tr("Пользователь: {user}", user=row.get("user") or "—"),
+                ]
+            )
+            if row.get("window"):
+                lines.append(tr("Окно: {title}", title=row.get("window")))
             return "\n".join(lines)
         if role == Qt.ItemDataRole.BackgroundRole:
             if row.get("suspicious"):
-                return QColor(255, 84, 112, 26)
+                return QColor(255, 84, 112, 34)
+            if row.get("kb_safety") == "bloatware":
+                return QColor(255, 176, 32, 16)
             if "скрыт" in row.get("flags_list", []):
                 return QColor(255, 255, 255, 6)
         if role == Qt.ItemDataRole.ForegroundRole:
-            if key in ("name", "flags") and row.get("suspicious"):
-                return QColor("#ff5470")
+            if key in ("name", "flags", "description") and row.get("suspicious"):
+                return QColor("#ff6b86")
+            if key == "description":
+                safety = row.get("kb_safety", "safe")
+                if safety == "critical":
+                    return QColor("#ff7b93")
+                if safety == "bloatware":
+                    return QColor("#ffd166")
+                if safety == "caution":
+                    return QColor("#b8c7e0")
+                return QColor("#b2f2bb")
             if key == "flags":
                 return QColor("#ffb020" if row.get("flags") else "#8b9bb4")
             if key in ("exe", "cmdline", "user") and not row.get(key):
@@ -170,8 +201,9 @@ class ProcessTableModel(QAbstractTableModel):
             return self._widths[column]
         return 120
 
+
 class ProcessFilterProxy(QSortFilterProxyModel):
-    """Поиск + режимы «все / скрытые / подозрительные»."""
+    """Поиск + режимы «все / скрытые / подозрительные / фоновый мусор»."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -198,24 +230,41 @@ class ProcessFilterProxy(QSortFilterProxyModel):
         if row is None:
             return False
         flags = row.get("flags_list", [])
-        if not self._show_system and "системный" in flags:
-            return False
-        if self._mode == "hidden" and "скрыт" not in flags:
-            return False
-        if self._mode == "suspicious" and not row.get("suspicious"):
-            return False
+        # В режиме просмотра подозрительных никогда не скрываем их из-за галочки «Системные»!
+        if self._mode == "suspicious":
+            if not row.get("suspicious"):
+                return False
+        else:
+            if not self._show_system and "системный" in flags:
+                return False
+            if self._mode == "hidden" and "скрыт" not in flags:
+                return False
+            if self._mode == "bloatware" and row.get("kb_safety") != "bloatware":
+                return False
         if self._search:
             haystack = " ".join(
                 str(row.get(key, ""))
-                for key in ("name", "pid", "exe", "cmdline", "user", "flags", "window")
+                for key in (
+                    "name",
+                    "pid",
+                    "description",
+                    "suspicious_text",
+                    "kb_category",
+                    "exe",
+                    "cmdline",
+                    "user",
+                    "flags",
+                    "window",
+                )
             )
             haystack += " " + " ".join(tr(flag) for flag in flags)
             if self._search not in haystack.lower():
                 return False
         return True
 
+
 class ProcessView(QWidget):
-    """Таблица процессов с поиском, фильтрами и управлением."""
+    """Таблица процессов с кнопкой «⚠️ Подозрительные (N)», базой знаний, открытием папки и удалением."""
 
     status_message = pyqtSignal(str)
 
@@ -235,40 +284,74 @@ class ProcessView(QWidget):
         root.setSpacing(10)
 
         toolbar = QHBoxLayout()
-        toolbar.setSpacing(8)
+        toolbar.setSpacing(6)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText(
-            tr("Поиск: имя, PID, путь, пользователь, окно…")
+            tr("Поиск: имя, назначение, PID, путь…")
         )
         self.search.setClearButtonEnabled(True)
-        self.search.setMinimumWidth(220)
+        self.search.setMinimumWidth(140)
 
         self.mode = QComboBox()
         self.mode.addItem(tr("Все процессы"), "all")
+        self.mode.addItem(tr("Подозрительные"), "suspicious")
+        self.mode.addItem(tr("Телеметрия / фон"), "bloatware")
         self.mode.addItem(tr("Только скрытые"), "hidden")
-        self.mode.addItem(tr("Только подозрительные"), "suspicious")
-        self.mode.setMinimumWidth(170)
+        self.mode.setMinimumWidth(145)
         current_mode = config.get("processes.mode", "all")
         index = self.mode.findData(current_mode)
         self.mode.setCurrentIndex(max(0, index))
 
+        # Отдельная заметная кнопка-переключатель для мгновенного показа подозрительных процессов
+        self.suspicious_btn = QPushButton(tr("⚠️ Угрозы (0)"))
+        self.suspicious_btn.setCheckable(True)
+        self.suspicious_btn.setMinimumWidth(120)
+        self.suspicious_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.suspicious_btn.setToolTip(
+            tr("Нажмите, чтобы отфильтровать таблицу и показать только подозрительные процессы и причины их пометки")
+        )
+
         self.system_check = QCheckBox(tr("Системные"))
         self.system_check.setChecked(bool(config.get("processes.show_system", True)))
 
+        self.info_button = QPushButton(tr("Что это?"))
+        self.info_button.setToolTip(tr("Показать подробное описание процесса и безопасность завершения"))
+        self.folder_button = QPushButton(tr("Папка"))
+        self.folder_button.setToolTip(tr("Открыть расположение EXE-файла процесса в Проводнике"))
         self.refresh_button = QPushButton(tr("Обновить"))
+        self.refresh_button.hide()
         self.kill_button = QPushButton(tr("Завершить"))
         self.kill_button.setObjectName("DangerButton")
         self.more_button = QPushButton(tr("Ещё"))
 
-        toolbar.addWidget(self.search, 2)
+        toolbar.addWidget(self.search, 1)
+        toolbar.addWidget(self.suspicious_btn)
         toolbar.addWidget(self.mode)
         toolbar.addWidget(self.system_check)
-        toolbar.addStretch(1)
-        toolbar.addWidget(self.refresh_button)
+        toolbar.addSpacing(4)
+        toolbar.addWidget(self.info_button)
+        toolbar.addWidget(self.folder_button)
         toolbar.addWidget(self.kill_button)
         toolbar.addWidget(self.more_button)
         root.addLayout(toolbar)
+
+        # Информационная плашка, которая появляется при включении фильтра «Подозрительные»
+        self.suspicious_banner = QFrame()
+        self.suspicious_banner.setObjectName("Card")
+        self.suspicious_banner.setVisible(False)
+        banner_layout = QHBoxLayout(self.suspicious_banner)
+        banner_layout.setContentsMargins(14, 10, 14, 10)
+        banner_layout.setSpacing(10)
+        self.suspicious_banner_label = QLabel("")
+        self.suspicious_banner_label.setWordWrap(True)
+        self.suspicious_banner_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.reset_filter_btn = QPushButton(tr("Показать все процессы"))
+        banner_layout.addWidget(self.suspicious_banner_label, 1)
+        banner_layout.addWidget(self.reset_filter_btn)
+        root.addWidget(self.suspicious_banner)
 
         self.model = ProcessTableModel()
         self.proxy = ProcessFilterProxy()
@@ -313,24 +396,40 @@ class ProcessView(QWidget):
 
         self.search.textChanged.connect(self.proxy.set_search)
         self.mode.currentIndexChanged.connect(self._on_mode_changed)
+        self.suspicious_btn.clicked.connect(self._on_suspicious_btn_clicked)
+        self.reset_filter_btn.clicked.connect(self.show_all_processes)
         self.system_check.toggled.connect(self._on_system_toggled)
+        self.info_button.clicked.connect(self.show_details)
+        self.folder_button.clicked.connect(self.open_folder)
         self.refresh_button.clicked.connect(self.refresh_now)
         self.kill_button.clicked.connect(self.kill_selected)
         self.table.doubleClicked.connect(lambda _index: self.show_details())
         self.table.customContextMenuRequested.connect(self._show_context_menu)
 
+        self.proxy.set_mode(current_mode)
+        self.suspicious_btn.setChecked(current_mode == "suspicious")
+
     def _build_menu(self) -> None:
         menu = QMenu(self)
-        menu.addAction(tr("Подробная информация"), self.show_details)
+        menu.addAction(tr("Что это за процесс? (Подробности)"), self.show_details)
+        menu.addAction(tr("Открыть расположение файла в Проводнике"), self.open_folder)
+        menu.addSeparator()
         menu.addAction(tr("Приостановить процесс"), self.suspend_selected)
         menu.addAction(tr("Продолжить процесс"), self.resume_selected)
         menu.addAction(tr("Приоритет…"), self.change_priority)
         menu.addSeparator()
-        menu.addAction(tr("Открыть расположение файла"), self.open_folder)
         menu.addAction(tr("Скопировать сведения"), self.copy_info)
         menu.addAction(tr("Экспорт в CSV…"), self.export_csv_dialog)
         menu.addSeparator()
         menu.addAction(tr("Завершить принудительно"), self.kill_selected_force)
+        menu.addAction(
+            tr("🗑️ Завершить и удалить EXE-файл процесса…"),
+            self.kill_and_delete_file,
+        )
+        menu.addAction(
+            tr("🧨 Завершить и удалить всю папку программы…"),
+            self.kill_and_delete_folder,
+        )
         self.more_button.setMenu(menu)
         self.context_menu = menu
 
@@ -365,8 +464,63 @@ class ProcessView(QWidget):
     def _on_mode_changed(self) -> None:
         mode = self.mode.currentData() or "all"
         self.proxy.set_mode(mode)
+        self.suspicious_btn.blockSignals(True)
+        self.suspicious_btn.setChecked(mode == "suspicious")
+        self.suspicious_btn.blockSignals(False)
         config.set("processes.mode", mode)
+        self._update_suspicious_banner()
         self._update_stats()
+
+    def _on_suspicious_btn_clicked(self, checked: bool) -> None:
+        if checked:
+            self.show_suspicious_only()
+        else:
+            self.show_all_processes()
+
+    def show_suspicious_only(self) -> None:
+        """Переключает фильтр таблицы в режим показа только подозрительных процессов."""
+        self.search.clear()
+        idx = self.mode.findData("suspicious")
+        if idx >= 0:
+            self.mode.setCurrentIndex(idx)
+        self.suspicious_btn.blockSignals(True)
+        self.suspicious_btn.setChecked(True)
+        self.suspicious_btn.blockSignals(False)
+        self._update_suspicious_banner()
+        self._update_stats()
+
+    def show_all_processes(self) -> None:
+        idx = self.mode.findData("all")
+        if idx >= 0:
+            self.mode.setCurrentIndex(idx)
+        self.suspicious_btn.blockSignals(True)
+        self.suspicious_btn.setChecked(False)
+        self.suspicious_btn.blockSignals(False)
+        self._update_suspicious_banner()
+        self._update_stats()
+
+    def _update_suspicious_banner(self) -> None:
+        mode = self.mode.currentData() or "all"
+        if mode != "suspicious":
+            self.suspicious_banner.setVisible(False)
+            return
+        rows = [r for r in self.model.rows() if r.get("suspicious")]
+        if not rows:
+            self.suspicious_banner_label.setText(
+                tr("✅ Подозрительных процессов сейчас не обнаружено.")
+            )
+        else:
+            details_lines = [
+                tr("🚨 Найдено подозрительных процессов: {count}. Причины пометки:", count=len(rows))
+            ]
+            for r in rows[:8]:
+                reasons = ", ".join(r.get("suspicious_reasons") or ["неизвестно"])
+                path_info = r.get("exe") or "путь скрыт системой"
+                details_lines.append(
+                    f"• {r.get('name')} (PID {r.get('pid')}) — {reasons}  [{path_info}]"
+                )
+            self.suspicious_banner_label.setText("\n".join(details_lines))
+        self.suspicious_banner.setVisible(True)
 
     def _on_system_toggled(self, checked: bool) -> None:
         self.proxy.set_show_system(checked)
@@ -377,7 +531,10 @@ class ProcessView(QWidget):
     # Данные
     # ------------------------------------------------------------------
     def set_active(self, active: bool) -> None:
+        was_active = self._active
         self._active = active
+        if active and not was_active and self._latest_payload:
+            self.set_snapshot(self._latest_payload)
 
     def is_active(self) -> bool:
         return self._active
@@ -395,13 +552,27 @@ class ProcessView(QWidget):
     def set_snapshot(self, payload: dict) -> None:
         self._latest_payload = payload
         rows = payload.get("rows", [])
+        stats = payload.get("stats", {})
+        susp_count = int(stats.get("suspicious", 0) or 0)
+        self.suspicious_btn.setText(
+            tr("⚠️ Угрозы ({count})", count=susp_count)
+        )
+        if susp_count > 0:
+            self.suspicious_btn.setStyleSheet(
+                "QPushButton { background: rgba(255, 84, 112, 0.20); "
+                "border: 1px solid #ff5470; color: #ff8fa3; font-weight: 600; }"
+                "QPushButton:checked { background: #ff5470; color: #0b0f17; }"
+            )
+        else:
+            self.suspicious_btn.setStyleSheet("")
+
         if not self._active and self.model.rowCount() > 0:
-            # Пока вкладка скрыта, не тратим время на перерисовку таблицы.
             return
         selected = self.selected_pids()
         top_pid = self._top_pid()
         self.model.set_rows(rows)
         self._restore_selection(selected, top_pid)
+        self._update_suspicious_banner()
         self._update_stats()
 
     def _update_stats(self) -> None:
@@ -482,15 +653,30 @@ class ProcessView(QWidget):
         self.mode.blockSignals(True)
         self.mode.setCurrentIndex(max(0, index))
         self.mode.blockSignals(False)
-        self.proxy.set_mode(self.mode.currentData() or "all")
+        mode = self.mode.currentData() or "all"
+        self.proxy.set_mode(mode)
+        self.suspicious_btn.blockSignals(True)
+        self.suspicious_btn.setChecked(mode == "suspicious")
+        self.suspicious_btn.blockSignals(False)
         show_system = bool(config.get("processes.show_system", True))
         self.system_check.blockSignals(True)
         self.system_check.setChecked(show_system)
         self.system_check.blockSignals(False)
         self.proxy.set_show_system(show_system)
+        self._update_suspicious_banner()
         self._apply_sort()
 
     def focus_pid(self, pid: int) -> None:
+        # Если процесс был скрыт фильтром — переключаемся на показ всех процессов
+        for proxy_row in range(self.proxy.rowCount()):
+            index = self.proxy.index(proxy_row, 0)
+            row = self.model.row(self.proxy.mapToSource(index).row())
+            if row and row.get("pid") == pid:
+                self.table.selectRow(proxy_row)
+                self.table.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtCenter)
+                return
+        self.show_all_processes()
+        self.system_check.setChecked(True)
         for proxy_row in range(self.proxy.rowCount()):
             index = self.proxy.index(proxy_row, 0)
             row = self.model.row(self.proxy.mapToSource(index).row())
@@ -530,10 +716,17 @@ class ProcessView(QWidget):
             names = ", ".join(f"{row['name']} ({row['pid']})" for row in rows[:5])
             if len(rows) > 5:
                 names += " " + tr("и ещё {count}", count=len(rows) - 5)
+            critical_rows = [r for r in rows if r.get("kb_safety") == "critical"]
+            warn_extra = ""
+            if critical_rows:
+                warn_extra = (
+                    "\n\n⛔ ВНИМАНИЕ: Среди выбранных есть критический системный процесс Windows! "
+                    "Его завершение может привести к синему экрану (BSOD)."
+                )
             answer = QMessageBox.question(
                 self,
                 tr("Завершение процессов"),
-                tr("Завершить: {names}?", names=names),
+                tr("Завершить: {names}?", names=names) + warn_extra,
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -570,6 +763,61 @@ class ProcessView(QWidget):
             self.status_message.emit(
                 tr("Завершено процессов: {count}", count=done)
             )
+
+    def kill_and_delete_file(self) -> None:
+        self._kill_and_delete(delete_folder=False)
+
+    def kill_and_delete_folder(self) -> None:
+        self._kill_and_delete(delete_folder=True)
+
+    def _kill_and_delete(self, *, delete_folder: bool) -> None:
+        rows = self._require_selection()
+        if not rows:
+            return
+        row = rows[0]
+        pid = int(row["pid"])
+        exe = row.get("exe") or ""
+        if not exe:
+            QMessageBox.warning(
+                self,
+                tr("Удаление процесса"),
+                tr("У выбранного процесса не определён путь к файлу EXE."),
+            )
+            return
+
+        target_str = str(Path(exe).parent) if delete_folder else exe
+        mode_title = (
+            tr("Завершить процесс и удалить ПАПКУ программы")
+            if delete_folder
+            else tr("Завершить процесс и удалить EXE-файл")
+        )
+        msg = (
+            f"Вы собираетесь принудительно завершить процесс:\n"
+            f"• {row.get('name')} (PID {pid})\n"
+            f"• Назначение: {row.get('description')}\n\n"
+            f"И БЕЗВОЗВРАТНО удалить с диска:\n"
+            f"👉 {target_str}\n\n"
+            f"Продолжить?"
+        )
+        answer = QMessageBox.warning(
+            self,
+            mode_title,
+            msg,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        ok, result_msg = self.collector.terminate_and_delete(
+            pid, delete_folder=delete_folder, shred_passes=0
+        )
+        self.refresh_now()
+        if ok:
+            self.status_message.emit(result_msg)
+            QMessageBox.information(self, mode_title, result_msg)
+        else:
+            QMessageBox.warning(self, mode_title, result_msg)
 
     def suspend_selected(self) -> None:
         self._apply_to_selected("suspend", tr("приостановлено"))
@@ -658,8 +906,8 @@ class ProcessView(QWidget):
         lines = []
         for row in rows:
             lines.append(
-                f"{row['name']} | PID {row['pid']} | CPU {row['cpu_text']} | "
-                f"RAM {row['mem_text']} | {row['user']} | {row['exe']}"
+                f"{row['name']} | PID {row['pid']} | {row.get('description', '')} | "
+                f"CPU {row['cpu_text']} | RAM {row['mem_text']} | {row['user']} | {row['exe']}"
             )
             if row.get("cmdline"):
                 lines.append(f"    {row['cmdline']}")
@@ -704,9 +952,3 @@ class ProcessView(QWidget):
             QMessageBox.warning(
                 self, tr("Экспорт"), tr("Не удалось сохранить файл")
             )
-
-
-
-
-
-

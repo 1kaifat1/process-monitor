@@ -108,6 +108,10 @@ the **Command line** column to see `main.py`.
   without third-party tools.
 - **Overview** — CPU/RAM/disk/network/uptime, three history charts, top
   processes by CPU and memory, system information.
+- **GPU** — NVIDIA via NVML: model, load, memory controller, temperature, VRAM,
+  clock and fan. The panel is hidden when NVML or a GPU is unavailable.
+- **RAM Clean** — button/`Ctrl+R` trims accessible process working sets,
+  reports freed memory; more processes are available with administrator rights.
 - **Customization** — dark/light theme, any accent color, font size, column
   set, refresh intervals, tray/autostart behavior, JSON settings export/import.
 - **Background mode** — closing the window hides it to the tray and polling
@@ -117,7 +121,8 @@ the **Command line** column to see `main.py`.
 
 - Windows 10/11 (x64)
 - For the EXE: nothing but Windows
-- For source: Python 3.10+ (tested on 3.15), `PyQt6`, `psutil`
+- For source: Python 3.10+ (tested on 3.15), `PyQt6`, `psutil`,
+  `nvidia-ml-py` (GPU monitoring; optional at runtime)
 
 ## Self-check
 
@@ -155,6 +160,7 @@ unpacked into a temporary folder.
 | Keys | Action |
 |---|---|
 | `F5` | Refresh the current tab |
+| `Ctrl+R` | Clean RAM |
 | `Ctrl+F` | Focus the process search |
 | `Ctrl+1…4` | Switch tabs |
 | `Ctrl+,` | Settings |

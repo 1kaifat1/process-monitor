@@ -1,4 +1,4 @@
-"""Диалог подробной информации о процессе."""
+"""Диалог подробной информации о процессе и справка «Что делает этот процесс»."""
 
 from __future__ import annotations
 
@@ -35,17 +35,58 @@ class ProcessDetailsDialog(QDialog):
         self.pid = pid
         self.info = collector.describe(pid)
 
-        self.setWindowTitle(tr("Процесс {pid} — подробности", pid=pid))
-        self.setMinimumSize(680, 560)
-        self.resize(760, 640)
+        self.setWindowTitle(tr("Процесс {pid} — что делает и подробности", pid=pid))
+        self.setMinimumSize(720, 620)
+        self.resize(800, 680)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 16, 18, 14)
         root.setSpacing(10)
 
-        title = QLabel(self.info.get("name") or f"PID {pid}")
+        header_row = QHBoxLayout()
+        title = QLabel(f"{self.info.get('name') or f'PID {pid}'}  (PID {pid})")
         title.setObjectName("PageTitle")
-        root.addWidget(title)
+        header_row.addWidget(title)
+        header_row.addStretch(1)
+
+        cat = self.info.get("kb_category") or ""
+        if cat:
+            cat_badge = QLabel(cat)
+            cat_badge.setObjectName("BadgeAccent")
+            header_row.addWidget(cat_badge)
+        root.addLayout(header_row)
+
+        # Карточка «Что делает этот процесс и безопасно ли его завершать»
+        kb_card = QFrame()
+        kb_card.setObjectName("Card")
+        kb_layout = QVBoxLayout(kb_card)
+        kb_layout.setContentsMargins(14, 12, 14, 12)
+        kb_layout.setSpacing(6)
+
+        summary_lbl = QLabel(self.info.get("kb_summary") or "Процесс Windows")
+        summary_lbl.setObjectName("SectionTitle")
+        summary_lbl.setWordWrap(True)
+        kb_layout.addWidget(summary_lbl)
+
+        details_lbl = QLabel(self.info.get("kb_details") or "")
+        details_lbl.setWordWrap(True)
+        details_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        kb_layout.addWidget(details_lbl)
+
+        safety_text = self.info.get("kb_safety_text") or ""
+        safety = self.info.get("kb_safety") or "safe"
+        if safety_text:
+            safety_lbl = QLabel(safety_text)
+            safety_lbl.setWordWrap(True)
+            if safety == "critical":
+                safety_lbl.setObjectName("BadgeDanger")
+            elif safety == "caution":
+                safety_lbl.setObjectName("BadgeWarning")
+            else:
+                safety_lbl.setObjectName("BadgeSuccess")
+            kb_layout.addWidget(safety_lbl)
+
+        root.addWidget(kb_card)
 
         if self.info.get("error"):
             error = QLabel(tr(str(self.info["error"])))
@@ -65,13 +106,15 @@ class ProcessDetailsDialog(QDialog):
         rows = [
             ("PID", self.info.get("pid")),
             (tr("Родительский PID"), self.info.get("ppid")),
+            (tr("Категория"), self.info.get("kb_category") or "—"),
+            (tr("Службы Windows"), self.info.get("kb_services") or "—"),
             (tr("Пользователь"), self.info.get("user")),
             (tr("Статус"), tr(str(self.info.get("status") or ""))),
             (tr("Запущен"), self.info.get("created")),
             (tr("Время работы"), self.info.get("uptime")),
-            (tr("Файл"), self.info.get("exe")),
-            (tr("Компания"), self.info.get("file_company")),
-            (tr("Описание"), self.info.get("file_description")),
+            (tr("Расположение файла"), self.info.get("exe")),
+            (tr("Компания / издатель"), self.info.get("file_company")),
+            (tr("Описание файла"), self.info.get("file_description")),
             (tr("Версия файла"), self.info.get("file_version")),
             (tr("Рабочая папка"), self.info.get("cwd")),
             (tr("Командная строка"), self.info.get("cmdline")),
@@ -98,7 +141,7 @@ class ProcessDetailsDialog(QDialog):
 
         buttons = QHBoxLayout()
         if self.info.get("exe"):
-            open_button = QPushButton(tr("Открыть папку"))
+            open_button = QPushButton(tr("Открыть папку в Проводнике"))
             open_button.clicked.connect(self._open_folder)
             buttons.addWidget(open_button)
         buttons.addStretch(1)

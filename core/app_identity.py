@@ -311,6 +311,13 @@ def _write_shortcut(path: Path, target: str, arguments: str, workdir: str) -> bo
         _release(link)
 
 
+def _refresh_shell_icons() -> None:
+    try:
+        ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)
+    except Exception:
+        pass
+
+
 def ensure_start_menu_shortcut() -> bool:
     """Создать (или обновить) ярлык «Pulse Monitor» в меню «Пуск».
 
@@ -333,9 +340,17 @@ def ensure_start_menu_shortcut() -> bool:
                 icon
             ).resolve()
             if target_ok and icon_ok:
-                return True
+                try:
+                    target_fresh = path.stat().st_mtime >= Path(target).stat().st_mtime
+                except OSError:
+                    target_fresh = False
+                if target_fresh:
+                    return True
         path.parent.mkdir(parents=True, exist_ok=True)
-        return _write_shortcut(path, target, arguments, workdir)
+        written = _write_shortcut(path, target, arguments, workdir)
+        if written:
+            _refresh_shell_icons()
+        return written
     except Exception:
         return False
 

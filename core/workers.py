@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import threading
-import time
 from typing import Callable
 
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -33,10 +32,12 @@ class CollectorThread(QThread):
         self._interval_getter = interval_getter
         self._active_getter = active_getter
         self._stop_event = threading.Event()
+        self._wake_event = threading.Event()
         self._paused = threading.Event()
 
     def run(self) -> None:  # noqa: D401 - переопределение QThread.run
         while not self._stop_event.is_set():
+            self._wake_event.clear()
             if not self._paused.is_set():
                 try:
                     payload = self._collector()
@@ -54,22 +55,22 @@ class CollectorThread(QThread):
                         interval *= 3
                 except Exception:
                     pass
-            self._stop_event.wait(interval)
+            self._wake_event.wait(interval)
 
     def set_paused(self, paused: bool) -> None:
         if paused:
             self._paused.set()
         else:
             self._paused.clear()
+            self._wake_event.set()
 
     def force_cycle(self) -> None:
         """Разбудить поток для немедленного опроса."""
-        # Простое решение: поток проснётся по таймауту; для мгновенного
-        # обновления интерфейс использует отдельный разовый вызов.
-        pass
+        self._wake_event.set()
 
     def stop(self) -> None:
         self._stop_event.set()
+        self._wake_event.set()
         self.wait(3000)
 
 
